@@ -1,5 +1,8 @@
 from flask_pymongo import pymongo
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 client = pymongo.MongoClient(os.getenv("MONGO_LOCAL"))
 
