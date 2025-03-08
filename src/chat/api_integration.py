@@ -143,7 +143,7 @@ def chat_twilio_endpoint():
 
         # Llamar a la lógica del chat simplificada
         ai_response = chat_logic_simplified(
-            sender_phone_number, incoming_msg, ai_name="tia maira"
+            sender_phone_number, incoming_msg, ai_name="tia maria"
         )
 
         # Preparar la respuesta para Twilio
