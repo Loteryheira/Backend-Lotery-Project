@@ -5,6 +5,9 @@ from src.database.db import friends_collection, chat_sessions_collection
 from datetime import datetime
 import openai
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 chatbot_api = Blueprint('chatbot_api', __name__)
 
