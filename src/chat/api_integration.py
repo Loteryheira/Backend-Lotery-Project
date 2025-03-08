@@ -160,7 +160,7 @@ def chat_twilio_endpoint():
 
         resp = MessagingResponse()
         msg = resp.message()
-        msg.body(ai_response[:600])  # Limitar longitud para SMS
+        msg.body(ai_response[:600]) 
 
         return str(resp)
     except Exception as e:
