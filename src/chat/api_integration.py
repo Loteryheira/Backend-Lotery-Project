@@ -115,7 +115,7 @@ def chat_twilio_endpoint():
         sender_phone_number = request.values.get('From', '').strip()
 
         # Llamar a la lógica del chat simplificada
-        ai_response = chat_logic_simplified(sender_phone_number, incoming_msg, ai_name="Tia Maria")
+        ai_response = chat_logic_simplified(sender_phone_number, incoming_msg, ai_name="tia maria")
 
         # Preparar la respuesta para Twilio
         resp = MessagingResponse()
