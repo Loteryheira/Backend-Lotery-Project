@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
-from src.database.db import friends_collection, chat_sessions_collection, sales_collection
+from src.database.db import friends_collection, chat_sessions_collection, sales_collection, comprobantes_collection
 from datetime import datetime
 import openai
 import os
@@ -25,35 +25,35 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     user_name = "mi amor"
-    
+
     if ai_name is None:
         return "¡Ay mi Dios! Algo salió mal, vuelva a intentarlo más tarde."
-    
+
     try:
         ia_info = friends_collection.find_one({"name": "Tía Maria"})
         if not ia_info:
             return "¡Upe! La Tía María está ocupada, intente más tarde."
-        
+
         atributos = ia_info.get('atributos', {})
         modismos = atributos.get('estilo_comunicacion', {}).get('modismos', ['mae', 'pura vida'])
         frases_venta = ia_info.get('frases_venta', [])
         cierres = ia_info.get('cierre_venta', {}).get('frases', [])
-        
+
         chat_session = chat_sessions_collection.find_one(
             {"phone_number": phone_number, "ia_name": "Tía Maria"}
         )
-        
+
         etapa_venta = "inicio"
         numeros = []
         monto = 0
         referencia_pago = ""
-        
+
         if chat_session:
             etapa_venta = chat_session.get("etapa_venta", "inicio")
             numeros = chat_session.get("numeros", [])
             monto = chat_session.get("monto", 0)
             referencia_pago = chat_session.get("referencia_pago", "")
-        
+
         # Lógica mejorada con manejo de comprobantes
         if etapa_venta == "inicio":
             ai_response = (
@@ -65,23 +65,23 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             etapa_venta = "solicitar_numeros"
             numeros = []
             monto = 0
-            
+
         elif etapa_venta == "solicitar_numeros":
             try:
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
-                
+
                 # Validación corregida con paréntesis correctos
                 if len(numeros) != 6 or len(set(numeros)) != 6 or any(not (1 <= int(n) <= 36) for n in numeros):
                     raise ValueError
-                
+
                 numeros = sorted(numeros)
                 ai_response = (
                     f"¡Buena elección! 🎰 Números: {', '.join(numeros)}\n"
                     f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Mínimo ¢200)"
                 )
                 etapa_venta = "solicitar_monto"
-                
+
             except Exception as e:
                 print(f"Error validación: {str(e)}")
                 ai_response = (
@@ -90,13 +90,13 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Ejemplo: 05, 12, 18, 23, 30, 35"
                 )
                 numeros = []
-                
+
         elif etapa_venta == "solicitar_monto":
             try:
                 monto = int(''.join(filter(str.isdigit, prompt)))
                 if monto < 200:
                     raise ValueError
-                
+
                 ai_response = (
                     f"¡Listo! 💵 Apostando ¢{monto:,}\n"
                     "**Instrucciones de pago:**\n"
@@ -105,51 +105,58 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     f"{random.choice(cierres)} 🍀"
                 )
                 etapa_venta = "validar_pago"
-                
+
             except:
                 ai_response = "¡Upe! 😅 Monto inválido. Mínimo ¢200"
-                
+
         elif etapa_venta == "validar_pago":
-            referencia = re.search(r'\b\d{10}\b', prompt)
+            referencia = re.search(r'\b\d{20}\b', prompt)
             if referencia:
                 referencia_pago = referencia.group()
-                
-                # Generar y guardar factura
-                factura = (
-                    f"📄 **COMPROBANTE OFICIAL**\n"
-                    f"📱 Cliente: {phone_number}\n"
-                    f"🔢 Números: {', '.join(numeros)}\n"
-                    f"💵 Monto: ¢{monto:,}\n"
-                    f"📟 Referencia: {referencia_pago}\n"
-                    f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                    "¡Gracias por jugar con nosotros! 🍀"
-                )
-                
-                # Registrar venta
-                sales_collection.insert_one({
-                    "telefono": phone_number,
-                    "numeros": numeros,
-                    "monto": monto,
-                    "referencia": referencia_pago,
-                    "fecha": datetime.now().isoformat(),
-                    "factura": factura
-                })
-                
-                ai_response = (
-                    f"✅ Pago validado\n\n{factura}\n\n"
-                    "Guarde este comprobante como respaldo oficial. "
-                    "¡Buena suerte mi amor! 😊"
-                )
-                etapa_venta = "inicio"
-                numeros = []
-                monto = 0
+
+                # Buscar el comprobante en la base de datos
+                comprobante = comprobantes_collection.find_one({"referencia": referencia_pago})
+                if comprobante:
+                    # Generar y guardar factura
+                    factura = (
+                        f"📄 **COMPROBANTE OFICIAL**\n"
+                        f"📱 Cliente: {phone_number}\n"
+                        f"🔢 Números: {', '.join(numeros)}\n"
+                        f"💵 Monto: ¢{monto:,}\n"
+                        f"📟 Referencia: {referencia_pago}\n"
+                        f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                        "¡Gracias por jugar con nosotros! 🍀"
+                    )
+
+                    # Registrar venta
+                    sales_collection.insert_one({
+                        "telefono": phone_number,
+                        "numeros": numeros,
+                        "monto": monto,
+                        "referencia": referencia_pago,
+                        "fecha": datetime.now().isoformat(),
+                        "factura": factura
+                    })
+
+                    ai_response = (
+                        f"✅ Pago validado\n\n{factura}\n\n"
+                        "Guarde este comprobante como respaldo oficial. "
+                        "¡Buena suerte mi amor! 😊"
+                    )
+                    etapa_venta = "inicio"
+                    numeros = []
+                    monto = 0
+                else:
+                    ai_response = (
+                        "¡Ay mi Dios! 😱 No encontré el número de referencia en nuestros registros."
+                    )
             else:
                 ai_response = (
                     "¡Ay mi Dios! 😱 No encontré el número de referencia\n"
-                    "Debe ser un número de 10 dígitos del comprobante\n"
-                    "Ejemplo válido: 1234567890"
+                    "Debe ser un número de 20 dígitos del comprobante\n"
+                    "Ejemplo válido: 12345678901234567890"
                 )
-        
+
         # Actualización de base de datos
         update_data = {
             "etapa_venta": etapa_venta,
@@ -158,7 +165,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             "referencia_pago": referencia_pago,
             "ultima_actualizacion": datetime.now().isoformat()
         }
-        
+
         if chat_session:
             chat_sessions_collection.update_one(
                 {"_id": chat_session["_id"]},
@@ -251,5 +258,42 @@ def chat_twilio_endpoint():
         msg.body(ai_response)
 
         return str(resp)
+    except Exception as e:
+        return str(e), 500
+
+@chatbot_api.route("/api/v1/sms", methods=["POST"])
+def receive_sms():
+    try:
+        incoming_msg = request.values.get("Body", "").strip()
+        sender_phone_number = request.values.get("From", "").strip()
+        expected_sender = "+12533667729"
+        expected_receiver = "+18777804236"
+
+        # Verificar el número de origen y destino
+        if sender_phone_number != expected_sender:
+            return "Número de origen no autorizado.", 403
+
+        # Verificar el número de destino
+        if request.values.get("To", "").strip() != expected_receiver:
+            return "Número de destino no autorizado.", 403
+
+        # Extracción del número de comprobante
+        comprobante_match = re.search(r'\b\d{20}\b', incoming_msg)
+        if comprobante_match:
+            referencia_pago = comprobante_match.group()
+
+            # Registrar comprobante en la base de datos
+            comprobantes_collection.insert_one({
+                "telefono": sender_phone_number,
+                "referencia": referencia_pago,
+                "fecha": datetime.now().isoformat(),
+                "mensaje": incoming_msg
+            })
+
+            # No es necesario responder al SMS si solo quieres registrarlo
+            return "", 204
+        else:
+            return "No se encontró un número de comprobante válido.", 400
+
     except Exception as e:
         return str(e), 500
