@@ -37,9 +37,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         modismos = atributos.get('estilo_comunicacion', {}).get('modismos', ['mae', 'pura vida'])
         frases_venta = ia_info.get('frases_venta', [])
         cierres = ia_info.get('cierre_venta', {}).get('frases', [])
-        saludos = ["¡Hola!", "¡Qué gusto!", "¡Buenas!"]
-        despedidas = ["¡Hasta luego!", "¡Que tenga buen día!", "¡Nos vemos!"]
-        agradecimientos = ["¡De nada, mi amor!", "¡Con gusto!", "¡A la orden!"]
 
         chat_session = chat_sessions_collection.find_one(
             {"phone_number": phone_number, "ia_name": "Tía Maria"}
@@ -73,10 +70,14 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
 
+                # Validación corregida con paréntesis correctos
+                if len(numeros) != 6 or len(set(numeros)) != 6 or any(not (1 <= int(n) <= 36) for n in numeros):
+                    raise ValueError
+
                 numeros = sorted(numeros)
                 ai_response = (
                     f"¡Buena elección! 🎰 Números: {', '.join(numeros)}\n"
-                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Maximo ¢6,000 por numero)"
+                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Mínimo ¢200)"
                 )
                 etapa_venta = "solicitar_monto"
 
@@ -84,7 +85,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 print(f"Error validación: {str(e)}")
                 ai_response = (
                     f"¡Ay mi Dios {user_name}! 😅\n"
-                    "Deben ser números ÚNICOS entre 01 y 99\n"
+                    "Deben ser 6 números ÚNICOS entre 01 y 36\n"
                     "Ejemplo: 05, 12, 18, 23, 30, 35"
                 )
                 numeros = []
@@ -92,7 +93,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         elif etapa_venta == "solicitar_monto":
             try:
                 monto = int(''.join(filter(str.isdigit, prompt)))
-                if monto > 6000:
+                if monto < 200:
                     raise ValueError
 
                 ai_response = (
@@ -105,21 +106,24 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 etapa_venta = "validar_pago"
 
             except:
-                ai_response = "¡Upe! 😅 Monto inválido. Maximo ¢6,000"
+                ai_response = "¡Upe! 😅 Monto inválido. Mínimo ¢200"
 
         elif etapa_venta == "validar_pago":
             referencia = re.search(r'\b\d{20}\b', prompt)
             if referencia:
                 referencia_pago = referencia.group()
 
+                # Verificar si la referencia ya ha sido utilizada
                 if sales_collection.find_one({"referencia": referencia_pago}):
                     ai_response = (
                         "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada. "
                         "Por favor, proporcione una referencia válida y no utilizada."
                     )
                 else:
+                    # Buscar el comprobante en la base de datos
                     comprobante = comprobantes_collection.find_one({"referencia": referencia_pago})
                     if comprobante:
+                        # Generar y guardar factura
                         factura = (
                             f"📄 **COMPROBANTE OFICIAL**\n"
                             f"📱 Cliente: {phone_number}\n"
@@ -130,6 +134,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             "¡Gracias por jugar con nosotros! 🍀"
                         )
 
+                        # Registrar venta
                         sales_collection.insert_one({
                             "telefono": phone_number,
                             "numeros": numeros,
@@ -157,16 +162,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Debe ser un número de 20 dígitos del comprobante\n"
                     "Ejemplo válido: 12345678901234567890"
                 )
-
-        # Respuestas a saludos y agradecimientos
-        if prompt.lower().strip() in ["hola", "buenas", "hi"]:
-            ai_response = f"{random.choice(saludos)} {user_name}, ¿en qué puedo ayudarte?"
-
-        elif prompt.lower().strip() in ["gracias", "muchas gracias"]:
-            ai_response = random.choice(agradecimientos)
-
-        elif prompt.lower().strip() in ["adios", "chao", "nos vemos"]:
-            ai_response = f"{random.choice(despedidas)} {user_name}."
 
         # Actualización de base de datos
         update_data = {
