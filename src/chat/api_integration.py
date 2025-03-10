@@ -22,13 +22,6 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-
-import openai
-from datetime import datetime
-
-# Configura tu clave de API de OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
 def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     user_name = "mi amor"
 
@@ -44,6 +37,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         modismos = atributos.get('estilo_comunicacion', {}).get('modismos', ['mae', 'pura vida'])
         frases_venta = ia_info.get('frases_venta', [])
         cierres = ia_info.get('cierre_venta', {}).get('frases', [])
+        saludos = ["¡Hola!", "¡Qué gusto!", "¡Buenas!"]
+        despedidas = ["¡Hasta luego!", "¡Que tenga buen día!", "¡Nos vemos!"]
+        agradecimientos = ["¡De nada, mi amor!", "¡Con gusto!", "¡A la orden!"]
 
         chat_session = chat_sessions_collection.find_one(
             {"phone_number": phone_number, "ia_name": "Tía Maria"}
@@ -77,10 +73,13 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
 
+                if len(numeros) != 6 or len(set(numeros)) != 6 or any(not (0 <= int(n) <= 99) for n in numeros):
+                    raise ValueError
+
                 numeros = sorted(numeros)
                 ai_response = (
                     f"¡Buena elección! 🎰 Números: {', '.join(numeros)}\n"
-                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Mínimo ¢200, Maximo ¢6,000)"
+                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Máximo ¢6,000)"
                 )
                 etapa_venta = "solicitar_monto"
 
@@ -96,9 +95,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         elif etapa_venta == "solicitar_monto":
             try:
                 monto = int(''.join(filter(str.isdigit, prompt)))
-                if monto < 200:
-                    raise ValueError
-                
                 if monto > 6000:
                     raise ValueError
 
@@ -112,7 +108,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 etapa_venta = "validar_pago"
 
             except:
-                ai_response = "¡Upe! 😅 Monto inválido. Mínimo ¢200"
+                ai_response = "¡Upe! 😅 Monto inválido. Máximo ¢6,000"
 
         elif etapa_venta == "validar_pago":
             referencia = re.search(r'\b\d{20}\b', prompt)
@@ -165,18 +161,32 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Ejemplo válido: 12345678901234567890"
                 )
 
+        # Respuestas a saludos y agradecimientos
+        if prompt.lower().strip() in ["hola", "buenas", "hi"]:
+            ai_response = f"{random.choice(saludos)} {user_name}, ¿en qué puedo ayudarte?"
+
+        elif prompt.lower().strip() in ["gracias", "muchas gracias"]:
+            ai_response = random.choice(agradecimientos)
+
+        elif prompt.lower().strip() in ["adios", "chao", "nos vemos"]:
+            ai_response = f"{random.choice(despedidas)} {user_name}."
+
         else:
             # Uso de OpenAI para respuestas más naturales
             chat_history = chat_session.get('chat_history', [])[-19:]
             messages = [{"role": msg.get('role', 'user'), "content": msg.get('content', '')} for msg in chat_history]
             messages.append({"role": "user", "content": prompt})
 
-            response = client.chat.completions.create(
-            model="gpt-4o-2024-05-13",
-            messages=messages,
-            temperature=0.6,
-            )
-            ai_response = response.choices[0].message.content.strip()
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-2024-05-13",
+                    messages=messages,
+                    temperature=0.6,
+                )
+                ai_response = response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"Error al llamar a OpenAI: {str(e)}")
+                ai_response = "Ocurrió un error al generar la respuesta. Por favor, inténtelo de nuevo."
 
         # Actualización de base de datos
         update_data = {
@@ -220,7 +230,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
 
-    
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
 def create_friend():
