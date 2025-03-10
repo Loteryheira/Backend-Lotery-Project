@@ -132,7 +132,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             f"💵 Monto: ¢{monto:,}\n"
                             f"📟 Referencia: {referencia_pago}\n"
                             f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                            "¡Gracias por jugar con nosotros! 🍀"
+                            "¡Gracias por jugar con nosotros. En caso de ganar comunicarte al 888888-88888! 🍀"
                         )
 
                         # Registrar venta
