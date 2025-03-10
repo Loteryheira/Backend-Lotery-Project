@@ -254,6 +254,10 @@ def chat_twilio_endpoint():
         incoming_msg = request.values.get("Body", "").strip()
         sender_phone_number = request.values.get("From", "").strip()
 
+        # Imprimir los valores recibidos para depuración
+        print(f"Body: {incoming_msg}")
+        print(f"From: {sender_phone_number}")
+
         # Llamar a la lógica del chat simplificada
         ai_response = chat_logic_simplified(
             sender_phone_number, incoming_msg, ai_name="Tía Maria"
@@ -266,6 +270,7 @@ def chat_twilio_endpoint():
 
         return str(resp)
     except Exception as e:
+        print(f"Error: {str(e)}")
         return str(e), 500
 
 @chatbot_api.route("/api/v1/sms", methods=["POST"])
