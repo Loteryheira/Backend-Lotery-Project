@@ -114,42 +114,49 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             if referencia:
                 referencia_pago = referencia.group()
 
-                # Buscar el comprobante en la base de datos
-                comprobante = comprobantes_collection.find_one({"referencia": referencia_pago})
-                if comprobante:
-                    # Generar y guardar factura
-                    factura = (
-                        f"📄 **COMPROBANTE OFICIAL**\n"
-                        f"📱 Cliente: {phone_number}\n"
-                        f"🔢 Números: {', '.join(numeros)}\n"
-                        f"💵 Monto: ¢{monto:,}\n"
-                        f"📟 Referencia: {referencia_pago}\n"
-                        f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                        "¡Gracias por jugar con nosotros! 🍀"
-                    )
-
-                    # Registrar venta
-                    sales_collection.insert_one({
-                        "telefono": phone_number,
-                        "numeros": numeros,
-                        "monto": monto,
-                        "referencia": referencia_pago,
-                        "fecha": datetime.now().isoformat(),
-                        "factura": factura
-                    })
-
+                # Verificar si la referencia ya ha sido utilizada
+                if sales_collection.find_one({"referencia": referencia_pago}):
                     ai_response = (
-                        f"✅ Pago validado\n\n{factura}\n\n"
-                        "Guarde este comprobante como respaldo oficial. "
-                        "¡Buena suerte mi amor! 😊"
+                        "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada. "
+                        "Por favor, proporcione una referencia válida y no utilizada."
                     )
-                    etapa_venta = "inicio"
-                    numeros = []
-                    monto = 0
                 else:
-                    ai_response = (
-                        "¡Ay mi Dios! 😱 No encontré el número de referencia en nuestros registros."
-                    )
+                    # Buscar el comprobante en la base de datos
+                    comprobante = comprobantes_collection.find_one({"referencia": referencia_pago})
+                    if comprobante:
+                        # Generar y guardar factura
+                        factura = (
+                            f"📄 **COMPROBANTE OFICIAL**\n"
+                            f"📱 Cliente: {phone_number}\n"
+                            f"🔢 Números: {', '.join(numeros)}\n"
+                            f"💵 Monto: ¢{monto:,}\n"
+                            f"📟 Referencia: {referencia_pago}\n"
+                            f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                            "¡Gracias por jugar con nosotros! 🍀"
+                        )
+
+                        # Registrar venta
+                        sales_collection.insert_one({
+                            "telefono": phone_number,
+                            "numeros": numeros,
+                            "monto": monto,
+                            "referencia": referencia_pago,
+                            "fecha": datetime.now().isoformat(),
+                            "factura": factura
+                        })
+
+                        ai_response = (
+                            f"✅ Pago validado\n\n{factura}\n\n"
+                            "Guarde este comprobante como respaldo oficial. "
+                            "¡Buena suerte mi amor! 😊"
+                        )
+                        etapa_venta = "inicio"
+                        numeros = []
+                        monto = 0
+                    else:
+                        ai_response = (
+                            "¡Ay mi Dios! 😱 No encontré el número de referencia en nuestros registros."
+                        )
             else:
                 ai_response = (
                     "¡Ay mi Dios! 😱 No encontré el número de referencia\n"
@@ -198,7 +205,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-
+    
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
 def create_friend():
