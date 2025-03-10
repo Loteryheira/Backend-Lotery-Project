@@ -161,18 +161,18 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Ejemplo válido: 12345678901234567890"
                 )
 
-        # Respuestas a saludos y agradecimientos
-        if prompt.lower().strip() in ["hola", "buenas", "hi"]:
+        # Respuestas a saludos, agradecimientos y despedidas
+        if any(saludo in prompt.lower() for saludo in ["hola", "buenas", "hi"]):
             ai_response = f"{random.choice(saludos)} {user_name}, ¿en qué puedo ayudarte?"
 
-        elif prompt.lower().strip() in ["gracias", "muchas gracias"]:
+        elif any(agradecimiento in prompt.lower() for agradecimiento in ["gracias", "muchas gracias"]):
             ai_response = random.choice(agradecimientos)
 
-        elif prompt.lower().strip() in ["adios", "chao", "nos vemos"]:
+        elif any(despedida in prompt.lower() for despedida in ["adios", "chao", "nos vemos"]):
             ai_response = f"{random.choice(despedidas)} {user_name}."
 
-        else:
-            # Uso de OpenAI para respuestas más naturales
+        # Uso de OpenAI para respuestas más naturales solo si no está en etapas de venta
+        elif etapa_venta == "inicio":
             chat_history = chat_session.get('chat_history', [])[-19:]
             messages = [{"role": msg.get('role', 'user'), "content": msg.get('content', '')} for msg in chat_history]
             messages.append({"role": "user", "content": prompt})
