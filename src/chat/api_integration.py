@@ -23,6 +23,12 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 
+import openai
+from datetime import datetime
+
+# Configura tu clave de API de OpenAI
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
 def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     user_name = "mi amor"
 
@@ -59,7 +65,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             ai_response = (
                 f"{random.choice(modismos).capitalize()} {user_name} 😊 "
                 f"{random.choice(frases_venta)} "
-                "Necesito 6 números diferentes entre 01 y 36.\n"
+                "Necesito 6 números diferentes entre 00 y 99.\n"
                 "Ejemplo válido: 05, 12, 18, 23, 30, 35"
             )
             etapa_venta = "solicitar_numeros"
@@ -71,14 +77,10 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
 
-                # Validación corregida con paréntesis correctos
-                if len(numeros) != 6 or len(set(numeros)) != 6 or any(not (1 <= int(n) <= 36) for n in numeros):
-                    raise ValueError
-
                 numeros = sorted(numeros)
                 ai_response = (
                     f"¡Buena elección! 🎰 Números: {', '.join(numeros)}\n"
-                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Mínimo ¢200)"
+                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Mínimo ¢200, Maximo ¢6,000)"
                 )
                 etapa_venta = "solicitar_monto"
 
@@ -86,7 +88,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 print(f"Error validación: {str(e)}")
                 ai_response = (
                     f"¡Ay mi Dios {user_name}! 😅\n"
-                    "Deben ser 6 números ÚNICOS entre 01 y 36\n"
+                    "Deben ser 6 números ÚNICOS entre 00 y 99\n"
                     "Ejemplo: 05, 12, 18, 23, 30, 35"
                 )
                 numeros = []
@@ -95,6 +97,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             try:
                 monto = int(''.join(filter(str.isdigit, prompt)))
                 if monto < 200:
+                    raise ValueError
+                
+                if monto > 6000:
                     raise ValueError
 
                 ai_response = (
@@ -114,17 +119,14 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             if referencia:
                 referencia_pago = referencia.group()
 
-                # Verificar si la referencia ya ha sido utilizada
                 if sales_collection.find_one({"referencia": referencia_pago}):
                     ai_response = (
                         "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada. "
                         "Por favor, proporcione una referencia válida y no utilizada."
                     )
                 else:
-                    # Buscar el comprobante en la base de datos
                     comprobante = comprobantes_collection.find_one({"referencia": referencia_pago})
                     if comprobante:
-                        # Generar y guardar factura
                         factura = (
                             f"📄 **COMPROBANTE OFICIAL**\n"
                             f"📱 Cliente: {phone_number}\n"
@@ -135,7 +137,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             "¡Gracias por jugar con nosotros! 🍀"
                         )
 
-                        # Registrar venta
                         sales_collection.insert_one({
                             "telefono": phone_number,
                             "numeros": numeros,
@@ -163,6 +164,19 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Debe ser un número de 20 dígitos del comprobante\n"
                     "Ejemplo válido: 12345678901234567890"
                 )
+
+        else:
+            # Uso de OpenAI para respuestas más naturales
+            chat_history = chat_session.get('chat_history', [])[-19:]
+            messages = [{"role": msg.get('role', 'user'), "content": msg.get('content', '')} for msg in chat_history]
+            messages.append({"role": "user", "content": prompt})
+
+            response = client.chat.completions.create(
+            model="gpt-4o-2024-05-13",
+            messages=messages,
+            temperature=0.6,
+            )
+            ai_response = response.choices[0].message.content.strip()
 
         # Actualización de base de datos
         update_data = {
@@ -205,6 +219,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+
     
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
