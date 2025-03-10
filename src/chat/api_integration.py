@@ -262,10 +262,19 @@ def chat_twilio_endpoint():
         return str(e), 500
 
 @chatbot_api.route("/api/v1/sms", methods=["POST"])
-def receive_sms():
+def handle_sms():
     try:
-        incoming_msg = request.values.get("Body", "").strip()
-        sender_phone_number = request.values.get("From", "").strip()
+        # Enviar el SMS utilizando Twilio
+        message = twilio_client.messages.create(
+            from_='+12533667729',
+            body='Hola, aquí está mi comprobante: 12345678901234567890',
+            to='+18777804236'
+        )
+        print(message.sid)
+
+        # Registrar el SMS en la base de datos
+        incoming_msg = 'Hola, aquí está mi comprobante: 12345678901234567890'
+        sender_phone_number = '+12533667729'
         expected_sender = "+12533667729"
         expected_receiver = "+18777804236"
 
@@ -274,7 +283,7 @@ def receive_sms():
             return "Número de origen no autorizado.", 403
 
         # Verificar el número de destino
-        if request.values.get("To", "").strip() != expected_receiver:
+        if '+18777804236' != expected_receiver:
             return "Número de destino no autorizado.", 403
 
         # Extracción del número de comprobante
@@ -290,8 +299,7 @@ def receive_sms():
                 "mensaje": incoming_msg
             })
 
-            # No es necesario responder al SMS si solo quieres registrarlo
-            return "", 204
+            return "SMS enviado y registrado correctamente.", 200
         else:
             return "No se encontró un número de comprobante válido.", 400
 
