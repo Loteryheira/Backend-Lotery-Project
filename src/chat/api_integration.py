@@ -61,7 +61,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             ai_response = (
                 f"{random.choice(modismos).capitalize()} {user_name} 😊 "
                 f"{random.choice(frases_venta)} "
-                "Necesito 6 números diferentes entre 00 y 99.\n"
+                "Necesito 6 números diferentes entre 01 y 36.\n"
                 "Ejemplo válido: 05, 12, 18, 23, 30, 35"
             )
             etapa_venta = "solicitar_numeros"
@@ -73,13 +73,10 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
 
-                if len(numeros) != 6 or len(set(numeros)) != 6 or any(not (0 <= int(n) <= 99) for n in numeros):
-                    raise ValueError
-
                 numeros = sorted(numeros)
                 ai_response = (
                     f"¡Buena elección! 🎰 Números: {', '.join(numeros)}\n"
-                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Máximo ¢6,000)"
+                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Maximo ¢6,000 por numero)"
                 )
                 etapa_venta = "solicitar_monto"
 
@@ -87,7 +84,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 print(f"Error validación: {str(e)}")
                 ai_response = (
                     f"¡Ay mi Dios {user_name}! 😅\n"
-                    "Deben ser 6 números ÚNICOS entre 00 y 99\n"
+                    "Deben ser números ÚNICOS entre 01 y 99\n"
                     "Ejemplo: 05, 12, 18, 23, 30, 35"
                 )
                 numeros = []
@@ -108,7 +105,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 etapa_venta = "validar_pago"
 
             except:
-                ai_response = "¡Upe! 😅 Monto inválido. Máximo ¢6,000"
+                ai_response = "¡Upe! 😅 Monto inválido. Maximo ¢6,000"
 
         elif etapa_venta == "validar_pago":
             referencia = re.search(r'\b\d{20}\b', prompt)
@@ -161,32 +158,15 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Ejemplo válido: 12345678901234567890"
                 )
 
-        # Respuestas a saludos, agradecimientos y despedidas
-        if any(saludo in prompt.lower() for saludo in ["hola", "buenas", "hi"]):
+        # Respuestas a saludos y agradecimientos
+        if prompt.lower().strip() in ["hola", "buenas", "hi"]:
             ai_response = f"{random.choice(saludos)} {user_name}, ¿en qué puedo ayudarte?"
 
-        elif any(agradecimiento in prompt.lower() for agradecimiento in ["gracias", "muchas gracias"]):
+        elif prompt.lower().strip() in ["gracias", "muchas gracias"]:
             ai_response = random.choice(agradecimientos)
 
-        elif any(despedida in prompt.lower() for despedida in ["adios", "chao", "nos vemos"]):
+        elif prompt.lower().strip() in ["adios", "chao", "nos vemos"]:
             ai_response = f"{random.choice(despedidas)} {user_name}."
-
-        # Uso de OpenAI para respuestas más naturales solo si no está en etapas de venta
-        elif etapa_venta == "inicio":
-            chat_history = chat_session.get('chat_history', [])[-19:]
-            messages = [{"role": msg.get('role', 'user'), "content": msg.get('content', '')} for msg in chat_history]
-            messages.append({"role": "user", "content": prompt})
-
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o-2024-05-13",
-                    messages=messages,
-                    temperature=0.6,
-                )
-                ai_response = response.choices[0].message.content.strip()
-            except Exception as e:
-                print(f"Error al llamar a OpenAI: {str(e)}")
-                ai_response = "Ocurrió un error al generar la respuesta. Por favor, inténtelo de nuevo."
 
         # Actualización de base de datos
         update_data = {
@@ -229,6 +209,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+
 
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
