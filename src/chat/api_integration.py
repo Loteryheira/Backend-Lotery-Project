@@ -23,6 +23,71 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 
+def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, audio_url):
+    ia_name = ia_info["name"]
+    ia_description = ia_info["description"] if ia_info else "Soy un asistente virtual."
+
+    training_content = ia_info.get('training_content', "")
+    if training_content:
+        introduction = f"Hi {user_name}, i'am {ia_name}, {ia_description} I am trained with the following information: {training_content[:500]}..."
+    else:
+        introduction = f"Hi {user_name}, i'am {ia_name}, {ia_description}"
+
+    chat_session = chat_sessions_collection.find_one({"phone_number": phone_number, "ia_name": ia_name})
+    if not chat_session:
+        chat_session = {
+            "phone_number": phone_number,
+            "chat_history": [{"role": "system", "content": introduction}],
+            "ia_name": ia_name,
+            "favorite": False,
+            "user_name": user_name
+        }
+        chat_session_id = chat_sessions_collection.insert_one(chat_session).inserted_id
+        chat_session = chat_sessions_collection.find_one({"_id": chat_session_id})
+    else:
+        chat_session_id = chat_session["_id"]
+
+    chat_history = chat_session.get('chat_history', [])[-19:]
+    messages = [{"role": msg.get('role', 'user'), "content": msg.get('content', '')} for msg in chat_history]
+    messages.append({"role": "system", "content": introduction})
+    messages.append({"role": "user", "content": prompt})
+
+    prompt_to_gpt = f"{introduction}\n\nUsando esta información, responde a la declaración de {user_name}.\n\nDeclaración: {prompt}"
+
+    messages.append({"role": "user", "content": prompt_to_gpt})
+
+    ai_response = None
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-2024-05-13",
+            messages=messages,
+            temperature=0.6,
+        )
+        ai_response = "La respuesta generada fue inesperadamente vacía."
+        if response.choices and response.choices[0].message.content.strip():
+            full_response = response.choices[0].message.content.strip()
+            response_parts = full_response.rsplit('. ', 1)
+            ai_response = response_parts[0] + '.' if len(response_parts) > 1 else full_response
+
+        lines = ai_response.split('\n')
+        for i, line in enumerate(lines):
+            if not line.lstrip().startswith('- ') and not line.lstrip().startswith(tuple(f"{n}. " for n in range(1, 11))):
+                lines[i] = line.replace('. ', '.\n')
+        ai_response = '\n'.join(lines)
+
+    except Exception as e:
+        print(f"Error inesperado: {e}")
+        ai_response = "Ocurrió un error al llamar a la API de OpenAI."
+
+    chat_sessions_collection.update_one(
+        {"_id": chat_session_id},
+        {"$push": {"chat_history": {"$each": [{'user_message': prompt, 'ai_response': ai_response, 'audio_url': audio_url, 'timestamp': datetime.now(), 'favorite':False}], "$slice": -20}}}
+    )
+
+    return ai_response
+
+
 def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     user_name = "mi amor"
 
@@ -54,24 +119,15 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             monto = chat_session.get("monto", 0)
             referencia_pago = chat_session.get("referencia_pago", "")
 
-        # Lógica mejorada con manejo de comprobantes
         if etapa_venta == "inicio":
-            ai_response = (
-                f"{random.choice(modismos).capitalize()} {user_name} 😊 "
-                f"{random.choice(frases_venta)} "
-                "Necesito 6 números diferentes entre 01 y 36.\n"
-                "Ejemplo válido: 05, 12, 18, 23, 30, 35"
-            )
+            ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=True, phone_number=phone_number, audio_url=audio_url)
             etapa_venta = "solicitar_numeros"
-            numeros = []
-            monto = 0
 
         elif etapa_venta == "solicitar_numeros":
             try:
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
 
-                # Validación corregida con paréntesis correctos
                 if len(numeros) != 6 or len(set(numeros)) != 6 or any(not (1 <= int(n) <= 36) for n in numeros):
                     raise ValueError
 
@@ -114,17 +170,14 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             if referencia:
                 referencia_pago = referencia.group()
 
-                # Verificar si la referencia ya ha sido utilizada
                 if sales_collection.find_one({"referencia": referencia_pago}):
                     ai_response = (
                         "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada. "
                         "Por favor, proporcione una referencia válida y no utilizada."
                     )
                 else:
-                    # Buscar el comprobante en la base de datos
                     comprobante = comprobantes_collection.find_one({"referencia": referencia_pago})
                     if comprobante:
-                        # Generar y guardar factura
                         factura = (
                             f"📄 **COMPROBANTE OFICIAL**\n"
                             f"📱 Cliente: {phone_number}\n"
@@ -135,7 +188,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             "¡Gracias por jugar con nosotros. En caso de ganar comunicarte al 888888-88888! 🍀"
                         )
 
-                        # Registrar venta
                         sales_collection.insert_one({
                             "telefono": phone_number,
                             "numeros": numeros,
@@ -150,7 +202,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             "Guarde este comprobante como respaldo oficial. "
                             "¡Buena suerte mi amor! 😊"
                         )
-                        etapa_venta = "inicio"
+                        etapa_venta = "finalizar"
                         numeros = []
                         monto = 0
                     else:
@@ -164,7 +216,13 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Ejemplo válido: 12345678901234567890"
                 )
 
-        # Actualización de base de datos
+        elif etapa_venta in ["solicitar_numeros", "solicitar_monto", "validar_pago"]:
+            ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
+            ai_response += "\n\nVolvamos al proceso de venta. ¿En qué puedo ayudarte con tu apuesta?"
+
+        if etapa_venta == "finalizar":
+            ai_response += "\n\n" + generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
+
         update_data = {
             "etapa_venta": etapa_venta,
             "numeros": numeros,
@@ -212,13 +270,11 @@ def create_friend():
     try:
         data = request.json
         
-        # Validar campos obligatorios
         required_fields = ["name", "description", "atributos", "frases_venta", "cierre_venta"]
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"Campo requerido faltante: {field}"}), 400
 
-        # Estructura completa con valores por defecto
         friend_data = {
             "name": data["name"],
             "description": data["description"],
@@ -254,16 +310,13 @@ def chat_twilio_endpoint():
         incoming_msg = request.values.get("Body", "").strip()
         sender_phone_number = request.values.get("From", "").strip()
 
-        # Imprimir los valores recibidos para depuración
         print(f"Body: {incoming_msg}")
         print(f"From: {sender_phone_number}")
 
-        # Llamar a la lógica del chat simplificada
         ai_response = chat_logic_simplified(
             sender_phone_number, incoming_msg, ai_name="Tía Maria"
         )
 
-        # Preparar la respuesta para Twilio
         resp = MessagingResponse()
         msg = resp.message()
         msg.body(ai_response)
@@ -276,10 +329,8 @@ def chat_twilio_endpoint():
 @chatbot_api.route("/api/v1/sms", methods=["POST"])
 def handle_sms():
     try:
-        # Obtener el cuerpo del mensaje de la solicitud
         body = request.form.get("Body", "Hola, aquí está mi comprobante: 12345678901234567890")
         
-        # Enviar el SMS utilizando Twilio
         message = twilio_client.messages.create(
             from_='+12533667729',
             body=body,
@@ -287,25 +338,20 @@ def handle_sms():
         )
         print(message.sid)
 
-        # Registrar el SMS en la base de datos
         sender_phone_number = '+12533667729'
         expected_sender = "+12533667729"
         expected_receiver = "+18777804236"
 
-        # Verificar el número de origen y destino
         if sender_phone_number != expected_sender:
             return "Número de origen no autorizado.", 403
 
-        # Verificar el número de destino
         if '+18777804236' != expected_receiver:
             return "Número de destino no autorizado.", 403
 
-        # Extracción del número de comprobante
         comprobante_match = re.search(r'\b\d{20}\b', body)
         if comprobante_match:
             referencia_pago = comprobante_match.group()
 
-            # Registrar comprobante en la base de datos
             comprobantes_collection.insert_one({
                 "telefono": sender_phone_number,
                 "referencia": referencia_pago,
