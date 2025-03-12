@@ -122,7 +122,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 "ultima_actualizacion": datetime.now().isoformat()
             }
             chat_session_id = chat_sessions_collection.insert_one(chat_session).inserted_id
-            chat_session = chat_sessions_collection.find_one({"_id": chat_session_id})
         else:
             chat_session_id = chat_session["_id"]
 
@@ -292,12 +291,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-
-
-    except Exception as e:
-        print(f"Error crítico: {str(e)}")
-        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-
+    
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
 def create_friend():
