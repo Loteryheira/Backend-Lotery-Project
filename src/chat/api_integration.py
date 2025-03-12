@@ -112,14 +112,18 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         numeros = []
         monto = 0
         referencia_pago = ""
+        ronda = ""
 
         if chat_session:
             etapa_venta = chat_session.get("etapa_venta", "inicio")
             numeros = chat_session.get("numeros", [])
             monto = chat_session.get("monto", 0)
             referencia_pago = chat_session.get("referencia_pago", "")
+            ronda = chat_session.get("ronda", "")
 
+        # Manejo de saludos y despedidas con IA
         if etapa_venta == "inicio":
+            # Saludo inicial con IA
             ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=True, phone_number=phone_number, audio_url=audio_url)
             etapa_venta = "solicitar_numeros"
 
@@ -128,13 +132,14 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
 
-                if len(numeros) != 6 or len(set(numeros)) != 6 or any(not (1 <= int(n) <= 36) for n in numeros):
+                if any(not (1 <= int(n) <= 99) for n in numeros):
                     raise ValueError
 
-                numeros = sorted(numeros)
+                numeros = sorted(set(numeros))  # Remove duplicates and sort
                 ai_response = (
                     f"¡Buena elección! 🎰 Números: {', '.join(numeros)}\n"
-                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar? (Mínimo ¢200)"
+                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar?\n"
+                    "Por favor, indique también la ronda (1pm, 4pm, 7pm)."
                 )
                 etapa_venta = "solicitar_monto"
 
@@ -142,19 +147,34 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 print(f"Error validación: {str(e)}")
                 ai_response = (
                     f"¡Ay mi Dios {user_name}! 😅\n"
-                    "Deben ser 6 números ÚNICOS entre 01 y 36\n"
-                    "Ejemplo: 05, 12, 18, 23, 30, 35"
+                    "Deben ser números ÚNICOS entre 01 y 99\n"
+                    "Ejemplo: 05, 12, 99"
                 )
                 numeros = []
 
         elif etapa_venta == "solicitar_monto":
             try:
                 monto = int(''.join(filter(str.isdigit, prompt)))
-                if monto < 200:
-                    raise ValueError
+                ronda_match = re.search(r'\b(1pm|4pm|7pm)\b', prompt, re.IGNORECASE)
+
+                if not ronda_match:
+                    raise ValueError("Ronda no especificada o inválida.")
+
+                ronda = ronda_match.group(1).lower()
+
+                # Verificar que la suma total de las apuestas para cada número no exceda los 6000
+                for numero in numeros:
+                    total_apostado = sum(
+                        bet["monto"] for bet in sales_collection.find({"numero": numero, "ronda": ronda})
+                    )
+                    if total_apostado + monto > 6000:
+                        return (
+                            f"¡Upe! 😅 La apuesta total para el número {numero} "
+                            "excede los ¢6000 permitidos para esta ronda."
+                        )
 
                 ai_response = (
-                    f"¡Listo! 💵 Apostando ¢{monto:,}\n"
+                    f"¡Listo! 💵 Apostando ¢{monto:,} para la ronda de las {ronda}.\n"
                     "**Instrucciones de pago:**\n"
                     "1. Transfiera al SINPE MÓVIL: 8888-8888\n"
                     "2. Envíe el NÚMERO DE REFERENCIA de su comprobante\n"
@@ -162,8 +182,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 )
                 etapa_venta = "validar_pago"
 
-            except:
-                ai_response = "¡Upe! 😅 Monto inválido. Mínimo ¢200"
+            except Exception as e:
+                print(f"Error monto: {str(e)}")
+                ai_response = "¡Upe! 😅 Monto inválido o ronda no especificada."
 
         elif etapa_venta == "validar_pago":
             referencia = re.search(r'\b\d{20}\b', prompt)
@@ -183,19 +204,22 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             f"📱 Cliente: {phone_number}\n"
                             f"🔢 Números: {', '.join(numeros)}\n"
                             f"💵 Monto: ¢{monto:,}\n"
+                            f"🕒 Ronda: {ronda}\n"
                             f"📟 Referencia: {referencia_pago}\n"
                             f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                            "¡Gracias por jugar con nosotros. En caso de ganar comunicarte al 888888-88888! 🍀"
+                            "¡Gracias por jugar con nosotros! 🍀"
                         )
 
-                        sales_collection.insert_one({
-                            "telefono": phone_number,
-                            "numeros": numeros,
-                            "monto": monto,
-                            "referencia": referencia_pago,
-                            "fecha": datetime.now().isoformat(),
-                            "factura": factura
-                        })
+                        for numero in numeros:
+                            sales_collection.insert_one({
+                                "telefono": phone_number,
+                                "numero": numero,
+                                "monto": monto,
+                                "referencia": referencia_pago,
+                                "ronda": ronda,
+                                "fecha": datetime.now().isoformat(),
+                                "factura": factura
+                            })
 
                         ai_response = (
                             f"✅ Pago validado\n\n{factura}\n\n"
@@ -216,18 +240,23 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Ejemplo válido: 12345678901234567890"
                 )
 
+        # Manejo de mensajes inesperados
         elif etapa_venta in ["solicitar_numeros", "solicitar_monto", "validar_pago"]:
+            # Si el mensaje no coincide con la etapa actual, la IA responde y redirige
             ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
             ai_response += "\n\nVolvamos al proceso de venta. ¿En qué puedo ayudarte con tu apuesta?"
 
+        # Despedida con IA
         if etapa_venta == "finalizar":
             ai_response += "\n\n" + generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
 
+        # Actualización de base de datos
         update_data = {
             "etapa_venta": etapa_venta,
             "numeros": numeros,
             "monto": monto,
             "referencia_pago": referencia_pago,
+            "ronda": ronda,
             "ultima_actualizacion": datetime.now().isoformat()
         }
 
@@ -263,7 +292,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-    
+
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
 def create_friend():
