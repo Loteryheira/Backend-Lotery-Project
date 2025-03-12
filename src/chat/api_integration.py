@@ -142,6 +142,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
                 numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
 
+                if not numeros:
+                    raise ValueError("No se proporcionaron números válidos.")
+
                 if any(not (1 <= int(n) <= 99) for n in numeros):
                     raise ValueError
 
@@ -157,10 +160,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 print(f"Error validación: {str(e)}")
                 ai_response = (
                     f"¡Ay mi Dios {user_name}! 😅\n"
-                    "Deben ser números ÚNICOS entre 01 y 99\n"
+                    "Deben ser números únicos entre 01 y 99.\n"
                     "Ejemplo: 05, 12, 99"
                 )
-                numeros = []
 
         elif etapa_venta == "solicitar_monto":
             try:
@@ -291,7 +293,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-    
+
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
 def create_friend():
