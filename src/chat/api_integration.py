@@ -165,20 +165,19 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
 
         elif etapa_venta == "solicitar_monto":
             try:
-                monto_match = re.search(r'\b\d+\b', prompt)
-                if not monto_match:
-                    raise ValueError("Monto no especificado.")
+                apuestas = re.findall(r'(\d{1,2})\s+a\s+las\s+(\d{1,2}(?:am|pm))\s+por\s+(\d+)', prompt)
+                if not apuestas:
+                    raise ValueError("Formato de apuesta no válido.")
 
-                monto = int(monto_match.group())
-                ronda_match = re.search(r'\b(1pm|4pm|7pm)\b', prompt, re.IGNORECASE)
+                total_monto = 0
+                apuestas_detalle = []
 
-                if not ronda_match:
-                    raise ValueError("Ronda no especificada o inválida.")
+                for numero, ronda, monto_str in apuestas:
+                    monto = int(monto_str)
+                    total_monto += monto
+                    ronda = ronda.lower()
 
-                ronda = ronda_match.group(1).lower()
-
-                # Verificar que la suma total de las apuestas para cada número no exceda los 6000
-                for numero in numeros:
+                    # Verificar que la suma total de las apuestas para cada número no exceda los 6000
                     total_apostado = sum(
                         bet["monto"] for bet in sales_collection.find({"numero": numero, "ronda": ronda})
                     )
@@ -189,14 +188,18 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             f"Monto disponible: ¢{6000 - total_apostado}"
                         )
 
+                    apuestas_detalle.append((numero, ronda, monto))
+
                 ai_response = (
-                    f"¡Listo! 💵 Apostando ¢{monto:,} para la ronda de las {ronda}.\n"
+                    f"¡Listo! 💵 Apostando un total de ¢{total_monto:,}.\n"
                     "**Instrucciones de pago:**\n"
                     "1. Transfiera al SINPE MÓVIL: 8888-8888\n"
                     "2. Envíe el NÚMERO DE REFERENCIA de su comprobante\n"
                     f"{random.choice(cierres)} 🍀"
                 )
                 etapa_venta = "validar_pago"
+                numeros = [numero for numero, _, _ in apuestas_detalle]
+                ronda = ", ".join(set(ronda for _, ronda, _ in apuestas_detalle))
 
             except Exception as e:
                 print(f"Error monto: {str(e)}")
@@ -297,6 +300,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+
 
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
