@@ -302,7 +302,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
 
 
-
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
 def create_friend():
     try:
