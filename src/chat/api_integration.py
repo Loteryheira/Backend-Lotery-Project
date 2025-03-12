@@ -146,14 +146,14 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         elif etapa_venta == "solicitar_numeros":
             try:
                 # Analizar el mensaje para obtener números, montos y rondas
-                apuestas_raw = re.findall(r'(\d{1,2})\s+al\s+(\d{1,2})\s+para\s+las\s+(\d{1,2}(?:am|pm))', prompt)
+                apuestas_raw = re.findall(r'(\d+)\s+al\s+(\d{1,2})\s+para\s+las\s+(\d{1,2}(?:am|pm))', prompt)
                 if not apuestas_raw:
                     raise ValueError("Formato de apuesta no válido.")
 
                 apuestas_detalle = []
                 total_monto = 0
 
-                for numero, monto_str, ronda in apuestas_raw:
+                for monto_str, numero, ronda in apuestas_raw:
                     monto = int(monto_str)
                     total_monto += monto
                     ronda = ronda.lower()
