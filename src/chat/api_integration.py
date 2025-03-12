@@ -118,7 +118,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 "monto": 0,
                 "referencia_pago": "",
                 "ronda": "",
-                "ultima_actualizacion": datetime.now().isoformat()
+                "ultima_actualizacion": datetime.now().isoformat(),
+                "apuestas": []  # Nuevo campo para almacenar apuestas detalladas
             }
             chat_session_id = chat_sessions_collection.insert_one(chat_session).inserted_id
         else:
@@ -129,50 +130,30 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         monto = chat_session.get("monto", 0)
         referencia_pago = chat_session.get("referencia_pago", "")
         ronda = chat_session.get("ronda", "")
+        apuestas = chat_session.get("apuestas", [])
 
         # Manejo de saludos y despedidas con IA
         if etapa_venta == "inicio":
-            # Saludo inicial con IA
-            ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=True, phone_number=phone_number, audio_url=audio_url)
+            # Saludo inicial con IA y explicación del sistema
+            ai_response = (
+                "¡Hola mi amor! Bienvenido al sistema de apuestas. "
+                "Por favor, indícame los números que deseas apostar y en qué ronda (1pm, 4pm, 7pm). "
+                "Por ejemplo: 'Quiero apostar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
+                "¡Buena suerte!"
+            )
             etapa_venta = "solicitar_numeros"
 
         elif etapa_venta == "solicitar_numeros":
             try:
-                numeros_raw = re.findall(r'\b\d{1,2}\b', prompt)
-                numeros = [n.zfill(2) for n in numeros_raw if n.isdigit()]
-
-                if not numeros:
-                    raise ValueError("No se proporcionaron números válidos.")
-
-                if any(not (1 <= int(n) <= 99) for n in numeros):
-                    raise ValueError
-
-                numeros = sorted(set(numeros))  # Remove duplicates and sort
-                ai_response = (
-                    f"¡Buena elección! 🎰 Números: {', '.join(numeros)}\n"
-                    f"{random.choice(modismos).capitalize()} ¿Cuánto va a apostar?\n"
-                    "Por favor, indique también la ronda (1pm, 4pm, 7pm)."
-                )
-                etapa_venta = "solicitar_monto"
-
-            except Exception as e:
-                print(f"Error validación: {str(e)}")
-                ai_response = (
-                    f"¡Ay mi Dios {user_name}! 😅\n"
-                    "Deben ser números únicos entre 01 y 99.\n"
-                    "Ejemplo: 05, 12, 99"
-                )
-
-        elif etapa_venta == "solicitar_monto":
-            try:
-                apuestas = re.findall(r'(\d{1,2})\s+a\s+las\s+(\d{1,2}(?:am|pm))\s+por\s+(\d+)', prompt)
-                if not apuestas:
+                # Analizar el mensaje para obtener números, montos y rondas
+                apuestas_raw = re.findall(r'(\d{1,2})\s+al\s+(\d{1,2})\s+para\s+las\s+(\d{1,2}(?:am|pm))', prompt)
+                if not apuestas_raw:
                     raise ValueError("Formato de apuesta no válido.")
 
-                total_monto = 0
                 apuestas_detalle = []
+                total_monto = 0
 
-                for numero, ronda, monto_str in apuestas:
+                for numero, monto_str, ronda in apuestas_raw:
                     monto = int(monto_str)
                     total_monto += monto
                     ronda = ronda.lower()
@@ -188,7 +169,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             f"Monto disponible: ¢{6000 - total_apostado}"
                         )
 
-                    apuestas_detalle.append((numero, ronda, monto))
+                    apuestas_detalle.append({"numero": numero, "ronda": ronda, "monto": monto})
 
                 ai_response = (
                     f"¡Listo! 💵 Apostando un total de ¢{total_monto:,}.\n"
@@ -198,8 +179,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     f"{random.choice(cierres)} 🍀"
                 )
                 etapa_venta = "validar_pago"
-                numeros = [numero for numero, _, _ in apuestas_detalle]
-                ronda = ", ".join(set(ronda for _, ronda, _ in apuestas_detalle))
+                numeros = [bet["numero"] for bet in apuestas_detalle]
+                apuestas = apuestas_detalle
 
             except Exception as e:
                 print(f"Error monto: {str(e)}")
@@ -221,15 +202,15 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                         factura = (
                             f"📄 **COMPROBANTE OFICIAL**\n"
                             f"📱 Cliente: {phone_number}\n"
-                            f"🔢 Números: {', '.join(numeros)}\n"
-                            f"💵 Monto: ¢{monto:,}\n"
-                            f"🕒 Ronda: {ronda}\n"
-                            f"📟 Referencia: {referencia_pago}\n"
-                            f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                            "¡Gracias por jugar con nosotros! 🍀"
+                            f"🔢 Números y Rondas:\n"
                         )
 
-                        for numero in numeros:
+                        for apuesta in apuestas:
+                            numero = apuesta["numero"]
+                            ronda = apuesta["ronda"]
+                            monto = apuesta["monto"]
+                            factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
+
                             sales_collection.insert_one({
                                 "telefono": phone_number,
                                 "numero": numero,
@@ -240,6 +221,10 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                                 "factura": factura
                             })
 
+                        factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
+                        factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                        factura += "¡Gracias por jugar con nosotros! 🍀"
+
                         ai_response = (
                             f"✅ Pago validado\n\n{factura}\n\n"
                             "Guarde este comprobante como respaldo oficial. "
@@ -248,6 +233,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                         etapa_venta = "finalizar"
                         numeros = []
                         monto = 0
+                        apuestas = []
                     else:
                         ai_response = (
                             "¡Ay mi Dios! 😱 No encontré el número de referencia en nuestros registros."
@@ -276,6 +262,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             "monto": monto,
             "referencia_pago": referencia_pago,
             "ronda": ronda,
+            "apuestas": apuestas,
             "ultima_actualizacion": datetime.now().isoformat()
         }
 
