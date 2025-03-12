@@ -104,22 +104,33 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         frases_venta = ia_info.get('frases_venta', [])
         cierres = ia_info.get('cierre_venta', {}).get('frases', [])
 
+        # Buscar o crear una sesión de chat existente
         chat_session = chat_sessions_collection.find_one(
             {"phone_number": phone_number, "ia_name": "Tía Maria"}
         )
 
-        etapa_venta = "inicio"
-        numeros = []
-        monto = 0
-        referencia_pago = ""
-        ronda = ""
+        if not chat_session:
+            chat_session = {
+                "phone_number": phone_number,
+                "ia_name": "Tía Maria",
+                "chat_history": [],
+                "etapa_venta": "inicio",
+                "numeros": [],
+                "monto": 0,
+                "referencia_pago": "",
+                "ronda": "",
+                "ultima_actualizacion": datetime.now().isoformat()
+            }
+            chat_session_id = chat_sessions_collection.insert_one(chat_session).inserted_id
+            chat_session = chat_sessions_collection.find_one({"_id": chat_session_id})
+        else:
+            chat_session_id = chat_session["_id"]
 
-        if chat_session:
-            etapa_venta = chat_session.get("etapa_venta", "inicio")
-            numeros = chat_session.get("numeros", [])
-            monto = chat_session.get("monto", 0)
-            referencia_pago = chat_session.get("referencia_pago", "")
-            ronda = chat_session.get("ronda", "")
+        etapa_venta = chat_session.get("etapa_venta", "inicio")
+        numeros = chat_session.get("numeros", [])
+        monto = chat_session.get("monto", 0)
+        referencia_pago = chat_session.get("referencia_pago", "")
+        ronda = chat_session.get("ronda", "")
 
         # Manejo de saludos y despedidas con IA
         if etapa_venta == "inicio":
@@ -260,34 +271,28 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             "ultima_actualizacion": datetime.now().isoformat()
         }
 
-        if chat_session:
-            chat_sessions_collection.update_one(
-                {"_id": chat_session["_id"]},
-                {
-                    "$set": update_data,
-                    "$push": {
-                        "chat_history": {
-                            "$each": [
-                                {"role": "user", "content": prompt},
-                                {"role": "assistant", "content": ai_response}
-                            ],
-                            "$slice": -20
-                        }
+        chat_sessions_collection.update_one(
+            {"_id": chat_session_id},
+            {
+                "$set": update_data,
+                "$push": {
+                    "chat_history": {
+                        "$each": [
+                            {"role": "user", "content": prompt},
+                            {"role": "assistant", "content": ai_response}
+                        ],
+                        "$slice": -20
                     }
                 }
-            )
-        else:
-            chat_sessions_collection.insert_one({
-                "phone_number": phone_number,
-                "ia_name": "Tía Maria",
-                "chat_history": [
-                    {"role": "user", "content": prompt},
-                    {"role": "assistant", "content": ai_response}
-                ],
-                **update_data
-            })
+            }
+        )
 
         return ai_response
+
+    except Exception as e:
+        print(f"Error crítico: {str(e)}")
+        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+
 
     except Exception as e:
         print(f"Error crítico: {str(e)}")
