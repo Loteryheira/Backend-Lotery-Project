@@ -182,7 +182,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     if total_apostado + monto > 6000:
                         return (
                             f"¡Upe! 😅 La apuesta total para el número {numero} "
-                            "excede los ¢6000 permitidos para esta ronda."
+                            f"excede los ¢6000 permitidos para esta ronda. "
+                            f"Monto disponible: ¢{6000 - total_apostado}"
                         )
 
                 ai_response = (
@@ -293,6 +294,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+
 
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
