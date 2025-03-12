@@ -182,6 +182,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 numeros = [bet["numero"] for bet in apuestas_detalle]
                 apuestas = apuestas_detalle
 
+                # Enviar respuesta al usuario
+                return ai_response
+
             except Exception as e:
                 print(f"Error monto: {str(e)}")
                 ai_response = "¡Upe! 😅 Monto inválido o ronda no especificada."
@@ -245,15 +248,24 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     "Ejemplo válido: 12345678901234567890"
                 )
 
+            # Enviar respuesta al usuario
+            return ai_response
+
         # Manejo de mensajes inesperados
         elif etapa_venta in ["solicitar_numeros", "solicitar_monto", "validar_pago"]:
             # Si el mensaje no coincide con la etapa actual, la IA responde y redirige
             ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
             ai_response += "\n\nVolvamos al proceso de venta. ¿En qué puedo ayudarte con tu apuesta?"
 
+            # Enviar respuesta al usuario
+            return ai_response
+
         # Despedida con IA
         if etapa_venta == "finalizar":
             ai_response += "\n\n" + generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
+
+            # Enviar respuesta al usuario
+            return ai_response
 
         # Actualización de base de datos
         update_data = {
@@ -282,6 +294,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             }
         )
 
+        # Enviar respuesta al usuario
         return ai_response
 
     except Exception as e:
