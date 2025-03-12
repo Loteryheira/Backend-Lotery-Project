@@ -87,7 +87,6 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
     return ai_response
 
-
 def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     user_name = "mi amor"
 
@@ -166,7 +165,11 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
 
         elif etapa_venta == "solicitar_monto":
             try:
-                monto = int(''.join(filter(str.isdigit, prompt)))
+                monto_match = re.search(r'\b\d+\b', prompt)
+                if not monto_match:
+                    raise ValueError("Monto no especificado.")
+
+                monto = int(monto_match.group())
                 ronda_match = re.search(r'\b(1pm|4pm|7pm)\b', prompt, re.IGNORECASE)
 
                 if not ronda_match:
@@ -294,7 +297,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-
 
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
