@@ -194,13 +194,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             if referencia:
                 referencia_pago = referencia.group()
 
-                # Verificar si la referencia ya ha sido utilizada
-                if comprobantes_collection.find_one({"referencia": referencia_pago}):
-                    ai_response = (
-                        "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada. "
-                        "Por favor, proporcione una referencia válida y no utilizada."
-                    )
-                else:
+                # Verificar si la referencia existe y no ha sido usada
+                comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
+                if comprobante:
                     factura = (
                         f"📄 **COMPROBANTE OFICIAL**\n"
                         f"📱 Cliente: {phone_number}\n"
@@ -237,13 +233,16 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                     monto = 0
                     apuestas = []
 
-                    # Guardar la referencia en la colección de comprobantes
-                    comprobantes_collection.insert_one({
-                        "telefono": phone_number,
-                        "referencia": referencia_pago,
-                        "fecha": datetime.now().isoformat(),
-                        "mensaje": prompt
-                    })
+                    # Marcar la referencia como usada
+                    comprobantes_collection.update_one(
+                        {"referencia": referencia_pago},
+                        {"$set": {"usado": True}}
+                    )
+                else:
+                    ai_response = (
+                        "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada o no es válida. "
+                        "Por favor, proporcione una referencia válida y no utilizada."
+                    )
             else:
                 ai_response = (
                     "¡Ay mi Dios! 😱 No encontré el número de referencia\n"
@@ -293,7 +292,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-
 
 
 #------------------- API Endpoints -------------------
@@ -390,7 +388,8 @@ def handle_sms():
                 "telefono": sender_phone_number,
                 "referencia": referencia_pago,
                 "fecha": datetime.now().isoformat(),
-                "mensaje": body
+                "mensaje": body,
+                "usado": False
             })
 
             return "SMS enviado y registrado correctamente.", 200
