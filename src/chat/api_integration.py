@@ -194,53 +194,56 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             if referencia:
                 referencia_pago = referencia.group()
 
-                if sales_collection.find_one({"referencia": referencia_pago}):
+                # Verificar si la referencia ya ha sido utilizada
+                if comprobantes_collection.find_one({"referencia": referencia_pago}):
                     ai_response = (
                         "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada. "
                         "Por favor, proporcione una referencia válida y no utilizada."
                     )
                 else:
-                    comprobante = comprobantes_collection.find_one({"referencia": referencia_pago})
-                    if comprobante:
-                        factura = (
-                            f"📄 **COMPROBANTE OFICIAL**\n"
-                            f"📱 Cliente: {phone_number}\n"
-                            f"🔢 Números y Rondas:\n"
-                        )
+                    factura = (
+                        f"📄 **COMPROBANTE OFICIAL**\n"
+                        f"📱 Cliente: {phone_number}\n"
+                        f"🔢 Números y Rondas:\n"
+                    )
 
-                        for apuesta in apuestas:
-                            numero = apuesta["numero"]
-                            ronda = apuesta["ronda"]
-                            monto = apuesta["monto"]
-                            factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
+                    for apuesta in apuestas:
+                        numero = apuesta["numero"]
+                        ronda = apuesta["ronda"]
+                        monto = apuesta["monto"]
+                        factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
 
-                            sales_collection.insert_one({
-                                "telefono": phone_number,
-                                "numero": numero,
-                                "monto": monto,
-                                "referencia": referencia_pago,
-                                "ronda": ronda,
-                                "fecha": datetime.now().isoformat(),
-                                "factura": factura
-                            })
+                        sales_collection.insert_one({
+                            "telefono": phone_number,
+                            "numero": numero,
+                            "monto": monto,
+                            "referencia": referencia_pago,
+                            "ronda": ronda,
+                            "fecha": datetime.now().isoformat(),
+                            "factura": factura
+                        })
 
-                        factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
-                        factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                        factura += "¡Gracias por jugar con nosotros! 🍀"
+                    factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
+                    factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                    factura += "¡Gracias por jugar con nosotros! 🍀"
 
-                        ai_response = (
-                            f"✅ Pago validado\n\n{factura}\n\n"
-                            "Guarde este comprobante como respaldo oficial. "
-                            "¡Buena suerte mi amor! 😊"
-                        )
-                        etapa_venta = "finalizar"
-                        numeros = []
-                        monto = 0
-                        apuestas = []
-                    else:
-                        ai_response = (
-                            "¡Ay mi Dios! 😱 No encontré el número de referencia en nuestros registros."
-                        )
+                    ai_response = (
+                        f"✅ Pago validado\n\n{factura}\n\n"
+                        "Guarde este comprobante como respaldo oficial. "
+                        "¡Buena suerte mi amor! 😊"
+                    )
+                    etapa_venta = "finalizar"
+                    numeros = []
+                    monto = 0
+                    apuestas = []
+
+                    # Guardar la referencia en la colección de comprobantes
+                    comprobantes_collection.insert_one({
+                        "telefono": phone_number,
+                        "referencia": referencia_pago,
+                        "fecha": datetime.now().isoformat(),
+                        "mensaje": prompt
+                    })
             else:
                 ai_response = (
                     "¡Ay mi Dios! 😱 No encontré el número de referencia\n"
@@ -264,7 +267,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
             "numeros": numeros,
             "monto": monto,
             "referencia_pago": referencia_pago,
-            "ronda": ronda,
+            "ronda": "",  # No se necesita almacenar una ronda general
             "apuestas": apuestas,
             "ultima_actualizacion": datetime.now().isoformat()
         }
@@ -290,6 +293,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+
 
 
 #------------------- API Endpoints -------------------
