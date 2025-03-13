@@ -238,6 +238,10 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                         {"referencia": referencia_pago},
                         {"$set": {"usado": True}}
                     )
+
+                    # No enviar mensajes adicionales después de finalizar
+                    return ai_response
+
                 else:
                     ai_response = (
                         "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada o no es válida. "
@@ -292,7 +296,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-
 
 #------------------- API Endpoints -------------------
 
