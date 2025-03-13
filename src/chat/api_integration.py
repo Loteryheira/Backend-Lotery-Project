@@ -136,7 +136,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
         apuestas = chat_session.get("apuestas", [])
 
         # Manejo de saludos y despedidas con IA
-        if etapa_venta == "inicio":
+        if etapa_venta == "inicio" or "hola" in prompt.lower():
             # Saludo inicial con IA y explicación del sistema
             ai_response = (
                 "¡Hola mi amor! Bienvenido al sistema de apuestas. "
@@ -209,7 +209,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                         monto = apuesta["monto"]
                         factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
 
-                        sales_collection.insert_one({
+                        # Guardar la apuesta con el ID del registro
+                        sales_record = sales_collection.insert_one({
                             "telefono": phone_number,
                             "numero": numero,
                             "monto": monto,
@@ -218,6 +219,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                             "fecha": datetime.now().isoformat(),
                             "factura": factura
                         })
+
+                        # Incluir el ID del registro en la factura
+                        factura += f"- ID de Registro: {sales_record.inserted_id}\n"
 
                     factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
                     factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
@@ -296,6 +300,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+
 
 #------------------- API Endpoints -------------------
 
