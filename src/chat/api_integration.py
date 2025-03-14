@@ -158,8 +158,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
         if etapa_venta == "inicio" or "hola" in prompt.lower():
             # Saludo inicial con IA y explicación del sistema
             ai_response = (
-                "¡Hola mi amor! Bienvenido al sistema de apuestas. "
-                "Por favor, indícame los números que deseas apostar y en qué ronda (1pm, 4pm, 7pm). "
+                "¡Hola sobrin@! Bienvenido al sistema de tiempos apuntados. "
+                "Por favor, indícame los números que deseas apuntar y en qué ronda (1pm, 4pm, 7pm). "
                 "Por ejemplo: 'Quiero apostar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
                 "¡Buena suerte!"
             )
@@ -186,7 +186,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     )
                     if total_apostado + monto > 6000:
                         return (
-                            f"¡Upe! 😅 La apuesta total para el número {numero} "
+                            f"¡Upe! 😅 El apuntado total para el número {numero} "
                             f"excede los ¢6000 permitidos para esta ronda. "
                             f"Monto disponible: ¢{6000 - total_apostado}"
                         )
@@ -194,7 +194,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     apuestas_detalle.append({"numero": numero, "ronda": ronda, "monto": monto})
 
                 ai_response = (
-                    f"¡Listo! 💵 Apostando un total de ¢{total_monto:,}.\n"
+                    f"¡Listo! 💵 Apuntando un total de ¢{total_monto:,}.\n"
                     "**Instrucciones de pago:**\n"
                     "1. Transfiere al SINPE MÓVIL: 8888-8888\n"
                     "2. Envíe el NÚMERO DE REFERENCIA de su comprobante o una captura de pantalla\n"
@@ -325,7 +325,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
     except Exception as e:
         print(f"Error crítico: {str(e)}")
-        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite sobrin@?"
 
 
 #------------------- API Endpoints -------------------
