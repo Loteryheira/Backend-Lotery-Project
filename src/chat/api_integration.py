@@ -159,8 +159,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
             # Saludo inicial con IA y explicación del sistema
             ai_response = (
                 "¡Hola sobrin@! Bienvenido al sistema de tiempos apuntados. "
-                "Por favor, indícame los números que deseas apuntar y en qué ronda (1pm, 4pm, 7pm). "
-                "Por ejemplo: 'Quiero apostar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
+                "Por favor, indícame los números que deseas apuntar y en qué sorteo (1pm, 4pm, 7pm). "
+                "Por ejemplo: 'Quiero apuntar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
                 "¡Buena suerte!"
             )
             etapa_venta = "solicitar_numeros"
