@@ -4,14 +4,12 @@ from src.chat.api_integration import chatbot_api
 from dotenv import load_dotenv
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="src/static")
 
 load_dotenv()
 
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
-
-app = Flask(__name__)
 CORS(app)
 
 app.register_blueprint(chatbot_api)

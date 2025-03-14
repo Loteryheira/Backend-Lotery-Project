@@ -8,6 +8,9 @@ import os
 from dotenv import load_dotenv
 import random
 import re
+import pytesseract
+from PIL import Image
+import re 
 
 load_dotenv()
 
@@ -21,6 +24,22 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+
+def extract_text_from_image(image_path):
+    try:
+        # Abrir la imagen usando Pillow
+        image = Image.open(image_path)
+        # Usar pytesseract para extraer texto de la imagen
+        extracted_text = pytesseract.image_to_string(image)
+
+        # Eliminar la imagen después de extraer el texto
+        os.remove(image_path)
+
+        return extracted_text
+    except Exception as e:
+        print(f"Error al extraer texto de la imagen: {str(e)}")
+        return None
 
 #------------------------- Función para generar respuesta de IA --------------------------
 
@@ -90,7 +109,7 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
 #------------------------- Función simplificada para la lógica de chat --------------------------
 
-def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
+def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_path=None):
     user_name = "mi amor"
 
     if ai_name is None:
@@ -177,8 +196,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 ai_response = (
                     f"¡Listo! 💵 Apostando un total de ¢{total_monto:,}.\n"
                     "**Instrucciones de pago:**\n"
-                    "1. Transfiera al SINPE MÓVIL: 8888-8888\n"
-                    "2. Envíe el NÚMERO DE REFERENCIA de su comprobante\n"
+                    "1. Transfiere al SINPE MÓVIL: 8888-8888\n"
+                    "2. Envíe el NÚMERO DE REFERENCIA de su comprobante o una captura de pantalla\n"
                     f"{random.choice(cierres)} 🍀"
                 )
                 etapa_venta = "validar_pago"
@@ -190,72 +209,79 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None):
                 ai_response = "¡Upe! 😅 Monto inválido o ronda no especificada."
 
         elif etapa_venta == "validar_pago":
-            referencia = re.search(r'\b\d{20}\b', prompt)
-            if referencia:
-                referencia_pago = referencia.group()
-
-                # Verificar si la referencia existe y no ha sido usada
-                comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
-                if comprobante:
-                    factura = (
-                        f"📄 **COMPROBANTE OFICIAL**\n"
-                        f"📱 Cliente: {phone_number}\n"
-                        f"🔢 Números y Rondas:\n"
-                    )
-
-                    for apuesta in apuestas:
-                        numero = apuesta["numero"]
-                        ronda = apuesta["ronda"]
-                        monto = apuesta["monto"]
-                        factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
-
-                        # Guardar la apuesta con el ID del registro
-                        sales_record = sales_collection.insert_one({
-                            "telefono": phone_number,
-                            "numero": numero,
-                            "monto": monto,
-                            "referencia": referencia_pago,
-                            "ronda": ronda,
-                            "fecha": datetime.now().isoformat(),
-                            "factura": factura
-                        })
-
-                        # Incluir el ID del registro en la factura
-                        factura += f"- ID de Registro: {sales_record.inserted_id}\n"
-
-                    factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
-                    factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                    factura += "¡Gracias por jugar con nosotros! 🍀"
-
-                    ai_response = (
-                        f"✅ Pago validado\n\n{factura}\n\n"
-                        "Guarde este comprobante como respaldo oficial. "
-                        "¡Buena suerte mi amor! 😊"
-                    )
-                    etapa_venta = "finalizar"
-                    numeros = []
-                    monto = 0
-                    apuestas = []
-
-                    # Marcar la referencia como usada
-                    comprobantes_collection.update_one(
-                        {"referencia": referencia_pago},
-                        {"$set": {"usado": True}}
-                    )
-
-                    # No enviar mensajes adicionales después de finalizar
-                    return ai_response
-
+            if image_path:
+                # Extraer texto de la imagen
+                extracted_text = extract_text_from_image(image_path)
+                if extracted_text:
+                    # Buscar el número de referencia en el texto extraído
+                    referencia = re.search(r'\b\d{20}\b', extracted_text)
+                    if referencia:
+                        referencia_pago = referencia.group()
+                    else:
+                        return "No se encontró el número de referencia en la imagen."
                 else:
-                    ai_response = (
-                        "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada o no es válida. "
-                        "Por favor, proporcione una referencia válida y no utilizada."
-                    )
+                    return "No se pudo extraer texto de la imagen."
+            else:
+                referencia = re.search(r'\b\d{20}\b', prompt)
+                if referencia:
+                    referencia_pago = referencia.group()
+
+            # Verificar si la referencia existe y no ha sido usada
+            comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
+            if comprobante:
+                factura = (
+                    f"📄 **COMPROBANTE OFICIAL**\n"
+                    f"📱 Cliente: {phone_number}\n"
+                    f"🔢 Números y Rondas:\n"
+                )
+
+                for apuesta in apuestas:
+                    numero = apuesta["numero"]
+                    ronda = apuesta["ronda"]
+                    monto = apuesta["monto"]
+                    factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
+
+                    # Guardar la apuesta con el ID del registro
+                    sales_record = sales_collection.insert_one({
+                        "telefono": phone_number,
+                        "numero": numero,
+                        "monto": monto,
+                        "referencia": referencia_pago,
+                        "ronda": ronda,
+                        "fecha": datetime.now().isoformat(),
+                        "factura": factura
+                    })
+
+                    # Incluir el ID del registro en la factura
+                    factura += f"- ID de Registro: {sales_record.inserted_id}\n"
+
+                factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
+                factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                factura += "¡Gracias por jugar con nosotros! 🍀"
+
+                ai_response = (
+                    f"✅ Pago validado\n\n{factura}\n\n"
+                    "Guarde este comprobante como respaldo oficial. "
+                    "¡Buena suerte mi amor! 😊"
+                )
+                etapa_venta = "finalizar"
+                numeros = []
+                monto = 0
+                apuestas = []
+
+                # Marcar la referencia como usada
+                comprobantes_collection.update_one(
+                    {"referencia": referencia_pago},
+                    {"$set": {"usado": True}}
+                )
+
+                # No enviar mensajes adicionales después de finalizar
+                return ai_response
+
             else:
                 ai_response = (
-                    "¡Ay mi Dios! 😱 No encontré el número de referencia\n"
-                    "Debe ser un número de 20 dígitos del comprobante\n"
-                    "Ejemplo válido: 12345678901234567890"
+                    "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada o no es válida. "
+                    "Por favor, proporcione una referencia válida y no utilizada."
                 )
 
         # Manejo de mensajes inesperados
