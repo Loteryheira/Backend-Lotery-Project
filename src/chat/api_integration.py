@@ -262,7 +262,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 ai_response = (
                     f"✅ Pago validado\n\n{factura}\n\n"
                     "Guarde este comprobante como respaldo oficial. "
-                    "¡Buena suerte mi amor! 😊"
+                    "¡Buena suerte sobrin@! 😊"
+                    "¡No se hacen cambios una vez realizada la transaccion!"
                 )
                 etapa_venta = "finalizar"
                 numeros = []
