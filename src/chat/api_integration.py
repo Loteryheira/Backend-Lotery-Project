@@ -11,6 +11,8 @@ import re
 import pytesseract
 from PIL import Image
 import re 
+import requests
+from io import BytesIO
 
 load_dotenv()
 
@@ -24,22 +26,6 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-
-def extract_text_from_image(image_path):
-    try:
-        # Abrir la imagen usando Pillow
-        image = Image.open(image_path)
-        # Usar pytesseract para extraer texto de la imagen
-        extracted_text = pytesseract.image_to_string(image)
-
-        # Eliminar la imagen después de extraer el texto
-        os.remove(image_path)
-
-        return extracted_text
-    except Exception as e:
-        print(f"Error al extraer texto de la imagen: {str(e)}")
-        return None
 
 #------------------------- Función para generar respuesta de IA --------------------------
 
@@ -109,7 +95,35 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
 #------------------------- Función simplificada para la lógica de chat --------------------------
 
-def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_path=None):
+def download_image_from_url(image_url):
+    try:
+        response = requests.get(image_url)
+        response.raise_for_status()
+        image = Image.open(BytesIO(response.content))
+        image_path = "downloaded_image.png"
+        image.save(image_path)
+        return image_path
+    except Exception as e:
+        print(f"Error al descargar la imagen: {str(e)}")
+        return None
+
+def extract_text_from_image(image_path):
+    try:
+        # Abrir la imagen usando Pillow
+        image = Image.open(image_path)
+        # Usar pytesseract para extraer texto de la imagen
+        extracted_text = pytesseract.image_to_string(image)
+
+        # Eliminar la imagen después de extraer el texto
+        os.remove(image_path)
+
+        return extracted_text
+    except Exception as e:
+        print(f"Error al extraer texto de la imagen: {str(e)}")
+        return None
+
+# Luego, en tu función chat_logic_simplified, puedes usar download_image_from_url para descargar la imagen
+def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_url=None):
     user_name = "mi amor"
 
     if ai_name is None:
@@ -209,18 +223,23 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 ai_response = "¡Upe! 😅 Monto inválido o ronda no especificada."
 
         elif etapa_venta == "validar_pago":
-            if image_path:
-                # Extraer texto de la imagen
-                extracted_text = extract_text_from_image(image_path)
-                if extracted_text:
-                    # Buscar el número de referencia en el texto extraído
-                    referencia = re.search(r'\b\d{20}\b', extracted_text)
-                    if referencia:
-                        referencia_pago = referencia.group()
+            if image_url:
+                # Descargar la imagen desde la URL
+                image_path = download_image_from_url(image_url)
+                if image_path:
+                    # Extraer texto de la imagen
+                    extracted_text = extract_text_from_image(image_path)
+                    if extracted_text:
+                        # Buscar el número de referencia en el texto extraído
+                        referencia = re.search(r'\b\d{20}\b', extracted_text)
+                        if referencia:
+                            referencia_pago = referencia.group()
+                        else:
+                            return "No se encontró el número de referencia en la imagen."
                     else:
-                        return "No se encontró el número de referencia en la imagen."
+                        return "No se pudo extraer texto de la imagen."
                 else:
-                    return "No se pudo extraer texto de la imagen."
+                    return "No se pudo descargar la imagen."
             else:
                 referencia = re.search(r'\b\d{20}\b', prompt)
                 if referencia:
