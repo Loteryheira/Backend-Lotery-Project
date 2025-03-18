@@ -145,6 +145,11 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
         if not ia_info:
             return "¡Upe! La Tía María está ocupada, intente más tarde."
 
+        atributos = ia_info.get('atributos', {})
+        modismos = atributos.get('estilo_comunicacion', {}).get('modismos', ['mae', 'pura vida'])
+        frases_venta = ia_info.get('frases_venta', [])
+        cierres = ia_info.get('cierre_venta', {}).get('frases', [])
+
         # Buscar o crear una sesión de chat existente
         chat_session = chat_sessions_collection.find_one(
             {"phone_number": phone_number, "ia_name": "Tía Maria"}
@@ -174,71 +179,136 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
         ronda = chat_session.get("ronda", "")
         apuestas = chat_session.get("apuestas", [])
 
-        if etapa_venta == "validar_pago" and image_url:
-            # Descargar y procesar la imagen
-            image = download_image(image_url)
-            if image:
-                referencia_pago = extract_text_from_image(image)
-                if referencia_pago:
-                    print(f"Referencia extraída: {referencia_pago}")  # Depuración
+        # Manejo de saludos y despedidas con IA
+        if etapa_venta == "inicio" or "hola" in prompt.lower():
+            ai_response = (
+                "¡Hola mi amor! Bienvenido al sistema de apuestas. "
+                "Por favor, indícame los números que deseas apostar y en qué ronda (1pm, 4pm, 7pm). "
+                "Por ejemplo: 'Quiero apostar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
+                "¡Buena suerte!"
+            )
+            etapa_venta = "solicitar_numeros"
+
+        elif etapa_venta == "solicitar_numeros":
+            try:
+                apuestas_raw = re.findall(r'(\d+)\s+al\s+(\d{1,2})\s+para\s+las\s+(\d{1,2}(?:am|pm))', prompt)
+                if not apuestas_raw:
+                    raise ValueError("Formato de apuesta no válido.")
+
+                apuestas_detalle = []
+                total_monto = 0
+
+                for monto_str, numero, ronda in apuestas_raw:
+                    monto = int(monto_str)
+                    total_monto += monto
+                    ronda = ronda.lower()
+
+                    total_apostado = sum(
+                        bet["monto"] for bet in sales_collection.find({"numero": numero, "ronda": ronda})
+                    )
+                    if total_apostado + monto > 6000:
+                        return (
+                            f"¡Upe! 😅 La apuesta total para el número {numero} "
+                            f"excede los ¢6000 permitidos para esta ronda. "
+                            f"Monto disponible: ¢{6000 - total_apostado}"
+                        )
+
+                    apuestas_detalle.append({"numero": numero, "ronda": ronda, "monto": monto})
+
+                ai_response = (
+                    f"¡Listo! 💵 Apostando un total de ¢{total_monto:,}.\n"
+                    "**Instrucciones de pago:**\n"
+                    "1. Transfiere al SINPE MÓVIL: 8888-8888\n"
+                    "2. Envíe el NÚMERO DE REFERENCIA de su comprobante o una captura de pantalla\n"
+                    f"{random.choice(cierres)} 🍀"
+                )
+                etapa_venta = "validar_pago"
+                numeros = [bet["numero"] for bet in apuestas_detalle]
+                apuestas = apuestas_detalle
+
+            except Exception as e:
+                print(f"Error monto: {str(e)}")
+                ai_response = "¡Upe! 😅 Monto inválido o ronda no especificada."
+
+        elif etapa_venta == "validar_pago":
+            if image_url:
+                # Descargar y procesar la imagen
+                image = download_image(image_url)
+                if image:
+                    referencia_pago = extract_text_from_image(image)
+                    if referencia_pago:
+                        print(f"Referencia extraída: {referencia_pago}")  # Depuración
+                    else:
+                        return "No se encontró el número de referencia en la imagen."
                 else:
-                    return "No se encontró el número de referencia en la imagen."
+                    return "No se pudo descargar la imagen."
             else:
-                return "No se pudo descargar la imagen."
+                referencia = re.search(r'\b\d{20}\b', prompt)
+                if referencia:
+                    referencia_pago = referencia.group()
 
-        # Verificar si la referencia existe y no ha sido usada
-        comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
-        if comprobante:
-            factura = (
-                f"📄 **COMPROBANTE OFICIAL**\n"
-                f"📱 Cliente: {phone_number}\n"
-                f"🔢 Números y Rondas:\n"
-            )
+            # Verificar si la referencia existe y no ha sido usada
+            comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
+            if comprobante:
+                factura = (
+                    f"📄 **COMPROBANTE OFICIAL**\n"
+                    f"📱 Cliente: {phone_number}\n"
+                    f"🔢 Números y Rondas:\n"
+                )
 
-            for apuesta in apuestas:
-                numero = apuesta["numero"]
-                ronda = apuesta["ronda"]
-                monto = apuesta["monto"]
-                factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
+                for apuesta in apuestas:
+                    numero = apuesta["numero"]
+                    ronda = apuesta["ronda"]
+                    monto = apuesta["monto"]
+                    factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
 
-                sales_record = sales_collection.insert_one({
-                    "telefono": phone_number,
-                    "numero": numero,
-                    "monto": monto,
-                    "referencia": referencia_pago,
-                    "ronda": ronda,
-                    "fecha": datetime.now().isoformat(),
-                    "factura": factura
-                })
+                    sales_record = sales_collection.insert_one({
+                        "telefono": phone_number,
+                        "numero": numero,
+                        "monto": monto,
+                        "referencia": referencia_pago,
+                        "ronda": ronda,
+                        "fecha": datetime.now().isoformat(),
+                        "factura": factura
+                    })
 
-                factura += f"- ID de Registro: {sales_record.inserted_id}\n"
+                    factura += f"- ID de Registro: {sales_record.inserted_id}\n"
 
-            factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
-            factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            factura += "¡Gracias por jugar con nosotros! 🍀"
+                factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
+                factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+                factura += "¡Gracias por jugar con nosotros! 🍀"
 
-            ai_response = (
-                f"✅ Pago validado\n\n{factura}\n\n"
-                "Guarde este comprobante como respaldo oficial. "
-                "¡Buena suerte mi amor! 😊"
-            )
-            etapa_venta = "finalizar"
-            numeros = []
-            monto = 0
-            apuestas = []
+                ai_response = (
+                    f"✅ Pago validado\n\n{factura}\n\n"
+                    "Guarde este comprobante como respaldo oficial. "
+                    "¡Buena suerte mi amor! 😊"
+                )
+                etapa_venta = "finalizar"
+                numeros = []
+                monto = 0
+                apuestas = []
 
-            comprobantes_collection.update_one(
-                {"referencia": referencia_pago},
-                {"$set": {"usado": True}}
-            )
+                comprobantes_collection.update_one(
+                    {"referencia": referencia_pago},
+                    {"$set": {"usado": True}}
+                )
 
-            return ai_response
+                return ai_response
 
-        else:
-            ai_response = (
-                "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada o no es válida. "
-                "Por favor, proporcione una referencia válida y no utilizada."
-            )
+            else:
+                ai_response = (
+                    "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada o no es válida. "
+                    "Por favor, proporcione una referencia válida y no utilizada."
+                )
+
+        # Manejo de mensajes inesperados
+        elif etapa_venta in ["solicitar_numeros", "solicitar_monto", "validar_pago"]:
+            ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
+            ai_response += "\n\nVolvamos al proceso de venta. ¿En qué puedo ayudarte con tu apuesta?"
+
+        # Despedida con IA
+        if etapa_venta == "finalizar":
+            ai_response += "\n\n" + generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
 
         # Actualización de base de datos
         update_data = {
