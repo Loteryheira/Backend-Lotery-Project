@@ -8,11 +8,12 @@ import os
 from dotenv import load_dotenv
 import random
 import re
-import pytesseract
 from PIL import Image
 import re 
 import requests
 from io import BytesIO
+from google import genai
+from google.genai import types
 
 load_dotenv()
 
@@ -102,7 +103,9 @@ def download_image_from_url(image_url):
             return None
 
         print(f"Intentando descargar la imagen desde la URL: {image_url}")
-        response = requests.get(image_url, timeout=10)  # Agregar un tiempo de espera
+        
+        # Autenticación con las credenciales de Twilio
+        response = requests.get(image_url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), timeout=10)
         response.raise_for_status()
 
         # Verificar el tipo de contenido
@@ -131,19 +134,31 @@ def download_image_from_url(image_url):
         print(f"Error al procesar la imagen: {str(e)}")
     return None
 
-def extract_text_from_image(image_path):
+def extract_text_from_image_with_gemini(image_url, api_key):
     try:
-        # Abrir la imagen usando Pillow
-        image = Image.open(image_path)
-        # Usar pytesseract para extraer texto de la imagen
-        extracted_text = pytesseract.image_to_string(image)
+        # Descargar la imagen desde la URL
+        image = requests.get(image_url)
+        if image.status_code != 200:
+            print(f"Error al descargar la imagen: {image.status_code}")
+            return None
 
-        # Eliminar la imagen después de extraer el texto
-        os.remove(image_path)
+        # Crear el cliente de Gemini
+        client = genai.Client(api_key=api_key)
 
+        # Enviar la solicitud al modelo de Gemini
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=["What is this image?",
+                      types.Part.from_bytes(data=image.content, mime_type="image/jpeg")]
+        )
+
+        # Extraer el texto de la respuesta
+        extracted_text = response.text
+        print(f"Texto extraído: {extracted_text}")
         return extracted_text
+
     except Exception as e:
-        print(f"Error al extraer texto de la imagen: {str(e)}")
+        print(f"Error al usar Gemini API: {str(e)}")
         return None
 
 # Luego, en tu función chat_logic_simplified, puedes usar download_image_from_url para descargar la imagen
@@ -251,8 +266,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 # Descargar la imagen desde la URL
                 image_path = download_image_from_url(image_url)
                 if image_path:
-                    # Extraer texto de la imagen
-                    extracted_text = extract_text_from_image(image_path)
+                    print(f"Imagen descargada y guardada en: {image_path}")
+                    api_key = os.getenv("GEMINI_API_KEY")
+                    extracted_text = extract_text_from_image_with_gemini(image_path, api_key)
                     if extracted_text:
                         # Buscar el número de referencia en el texto extraído
                         referencia = re.search(r'\b\d{20}\b', extracted_text)
