@@ -263,15 +263,19 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
         elif etapa_venta == "validar_pago":
             if image_url:
+        
                 image_path = download_image_from_url(image_url)
                 if image_path:
                     print(f"Imagen descargada y guardada en: {image_path}")
-                    api_key = os.getenv("GEMINI_API_KEY")
+                    api_key = os.getenv("GEMINI_API_KEY")  
                     extracted_text = extract_text_from_image_with_gemini(image_path, api_key)
                     if extracted_text:
                         referencia = re.search(r'\b\d{20}\b', extracted_text)
                         if referencia:
                             referencia_pago = referencia.group()
+                            print(f"Referencia extraída: {referencia_pago}")
+                    
+                            prompt += f" Referencia: {referencia_pago}"
                         else:
                             return "No se encontró el número de referencia en la imagen."
                     else:
@@ -282,6 +286,10 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 referencia = re.search(r'\b\d{20}\b', prompt)
                 if referencia:
                     referencia_pago = referencia.group()
+                    print(f"Referencia extraída: {referencia_pago}")
+                else:
+                    return "No se encontró el número de referencia en el mensaje."
+
 
             # Verificar si la referencia existe y no ha sido usada
             comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
