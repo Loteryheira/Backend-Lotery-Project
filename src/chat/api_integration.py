@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app as app
 from twilio.twiml.messaging_response import MessagingResponse
 from twilio.rest import Client
 from src.database.db import friends_collection, chat_sessions_collection, sales_collection, comprobantes_collection
@@ -99,10 +99,10 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 def download_image_from_url(image_url):
     try:
         if not image_url:
-            print("URL de la imagen está vacía.")
+            app.logger.info("URL de la imagen está vacía.")
             return None
 
-        print(f"Intentando descargar la imagen desde la URL: {image_url}")
+        app.logger.info(f"Intentando descargar la imagen desde la URL: {image_url}")
         
         # Autenticación con las credenciales de Twilio
         response = requests.get(image_url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), timeout=10)
@@ -111,7 +111,7 @@ def download_image_from_url(image_url):
         # Verificar el tipo de contenido
         content_type = response.headers.get('Content-Type', '')
         if 'image' not in content_type:
-            print(f"El contenido descargado no es una imagen. Content-Type: {content_type}")
+            app.logger.info(f"El contenido descargado no es una imagen. Content-Type: {content_type}")
             return None
 
         # Abrir la imagen
@@ -121,17 +121,17 @@ def download_image_from_url(image_url):
         static_folder = os.path.join(os.path.dirname(__file__), '..', 'static')
         if not os.path.exists(static_folder):
             os.makedirs(static_folder)
-            print(f"Carpeta 'static' creada en: {static_folder}")
+            app.logger.info(f"Carpeta 'static' creada en: {static_folder}")
 
         # Guardar la imagen
         image_path = os.path.join(static_folder, "downloaded_image.png")
         image.save(image_path)
-        print(f"Imagen descargada y guardada en: {image_path}")
+        app.logger.info(f"Imagen descargada y guardada en: {image_path}")
         return image_path
     except requests.exceptions.RequestException as req_err:
-        print(f"Error de red al descargar la imagen: {str(req_err)}")
+        app.logger.info(f"Error de red al descargar la imagen: {str(req_err)}")
     except Exception as e:
-        print(f"Error al procesar la imagen: {str(e)}")
+        app.logger.info(f"Error al procesar la imagen: {str(e)}")
     return None
 
 def extract_text_from_image_with_gemini(image_path, api_key):
@@ -152,11 +152,11 @@ def extract_text_from_image_with_gemini(image_path, api_key):
 
         # Extraer el texto de la respuesta
         extracted_text = response.text
-        print(f"Texto extraído: {extracted_text}")
+        app.logger.info(f"Texto extraído: {extracted_text}")
         return extracted_text
 
     except Exception as e:
-        print(f"Error al usar Gemini API: {str(e)}")
+        app.logger.info(f"Error al usar Gemini API: {str(e)}")
         return None
 
 # Luego, en tu función chat_logic_simplified, puedes usar download_image_from_url para descargar la imagen
@@ -264,16 +264,16 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 # Descargar la imagen desde la URL
                 image_path = download_image_from_url(image_url)
                 if image_path:
-                    print(f"Imagen descargada y guardada en: {image_path}")
+                    app.logger.info(f"Imagen descargada y guardada en: {image_path}")
                     api_key = os.getenv("GEMINI_API_KEY")  # Asegúrate de que esta clave esté configurada
                     extracted_text = extract_text_from_image_with_gemini(image_path, api_key)
                     if extracted_text:
-                        print(f"Texto extraído completo: {extracted_text}")  # Depuración
+                        app.logger.info(f"Texto extraído completo: {extracted_text}")  # Depuración
                         # Buscar el número de referencia en el texto extraído
                         referencia = re.search(r'\b\d{20,30}\b', extracted_text)
                         if referencia:
                             referencia_pago = referencia.group()
-                            print(f"Referencia extraída: {referencia_pago}")
+                            app.logger.info(f"Referencia extraída: {referencia_pago}")
                             # Actualizar el prompt con la referencia extraída
                             prompt += f" Referencia: {referencia_pago}"
                         else:
@@ -286,7 +286,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 referencia = re.search(r'\b\d{20,30}\b', prompt)
                 if referencia:
                     referencia_pago = referencia.group()
-                    print(f"Referencia extraída: {referencia_pago}")
+                    app.logger.info(f"Referencia extraída: {referencia_pago}")
                 else:
                     return "No se encontró el número de referencia en el mensaje."
                 
@@ -441,12 +441,12 @@ def chat_twilio_endpoint():
         sender_phone_number = request.values.get("From", "").strip()
         media_url = request.values.get("MediaUrl0", "").strip()
 
-        print(f"Mensaje recibido: {incoming_msg}")
-        print(f"Número del remitente: {sender_phone_number}")
-        print(f"URL de la imagen recibida: {media_url}")
+        app.logger.info(f"Mensaje recibido: {incoming_msg}")
+        app.logger.info(f"Número del remitente: {sender_phone_number}")
+        app.logger.info(f"URL de la imagen recibida: {media_url}")
 
         if not incoming_msg and not media_url:
-            print("El mensaje recibido está vacío y no contiene una URL de imagen.")
+            app.logger.info("El mensaje recibido está vacío y no contiene una URL de imagen.")
             return "No se recibió ningún mensaje ni imagen.", 400
 
         ai_response = chat_logic_simplified(
@@ -457,10 +457,10 @@ def chat_twilio_endpoint():
         msg = resp.message()
         msg.body(ai_response)
 
-        print(f"Respuesta enviada al usuario: {ai_response}")
+        app.logger.info(f"Respuesta enviada al usuario: {ai_response}")
         return str(resp)
     except Exception as e:
-        print(f"Error en el endpoint /api/v1/chat/twilio: {str(e)}")
+        app.logger.info(f"Error en el endpoint /api/v1/chat/twilio: {str(e)}")
         return str(e), 500
 
 @chatbot_api.route("/api/v1/sms", methods=["POST"])
