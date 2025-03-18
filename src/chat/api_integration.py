@@ -100,7 +100,13 @@ def download_image_from_url(image_url):
         response = requests.get(image_url)
         response.raise_for_status()
         image = Image.open(BytesIO(response.content))
-        image_path = "downloaded_image.png"
+        
+        # Verificar si la carpeta 'static' existe, si no, crearla
+        static_folder = os.path.join(os.path.dirname(__file__), '..', 'static')
+        if not os.path.exists(static_folder):
+            os.makedirs(static_folder)
+        
+        image_path = os.path.join(static_folder, "downloaded_image.png")
         image.save(image_path)
         return image_path
     except Exception as e:
