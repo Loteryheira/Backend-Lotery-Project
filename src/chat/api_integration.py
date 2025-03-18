@@ -10,6 +10,8 @@ import random
 import re
 import pytesseract
 from PIL import Image
+import requests
+from io import BytesIO
 import re 
 
 load_dotenv()
@@ -93,18 +95,21 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
 #------------------------- Función simplificada para la lógica de chat --------------------------
 
-def extract_text_from_image(image_path):
+def download_image(image_url):
+    try:
+        response = requests.get(image_url)
+        response.raise_for_status()
+        image = Image.open(BytesIO(response.content))
+        return image
+    except Exception as e:
+        print(f"Error al descargar la imagen: {str(e)}")
+        return None
+
+def extract_text_from_image(image):
     """
-    Extrae texto de una imagen usando Tesseract OCR y elimina la imagen después de procesarla.
+    Extrae texto de una imagen usando Tesseract OCR.
     """
     try:
-        # Verificar si la ruta de la imagen es accesible
-        if not os.path.exists(image_path):
-            print(f"La ruta de la imagen no existe: {image_path}")
-            return None
-
-        # Abrir la imagen usando Pillow
-        image = Image.open(image_path)
         # Usar pytesseract para extraer texto de la imagen
         extracted_text = pytesseract.image_to_string(image)
         print(f"Texto extraído: {extracted_text}")  # Depuración
@@ -114,8 +119,6 @@ def extract_text_from_image(image_path):
         if referencia_match:
             referencia = referencia_match.group(1)
             print(f"Referencia encontrada: {referencia}")  # Depuración
-            # Eliminar la imagen después de extraer el texto
-            os.remove(image_path)
             return referencia
         else:
             # Si no se encuentra una referencia de 20 dígitos, buscar cualquier secuencia de 20 dígitos
@@ -123,8 +126,6 @@ def extract_text_from_image(image_path):
             if referencia_match:
                 referencia = referencia_match.group(1)
                 print(f"Referencia encontrada: {referencia}")  # Depuración
-                # Eliminar la imagen después de extraer el texto
-                os.remove(image_path)
                 return referencia
 
         return None
