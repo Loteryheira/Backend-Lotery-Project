@@ -4,7 +4,7 @@ from src.chat.api_integration import chatbot_api
 from dotenv import load_dotenv
 import os
 
-app = Flask(__name__, static_folder="src/static")
+app = Flask(__name__, static_folder="/src/static")
 
 load_dotenv()
 
