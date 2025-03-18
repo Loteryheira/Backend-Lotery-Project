@@ -269,7 +269,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     api_key = os.getenv("GEMINI_API_KEY")
                     extracted_text = extract_text_from_image_with_gemini(image_path, api_key)
                     if extracted_text:
-                        # Buscar el número de referencia en el texto extraído
                         referencia = re.search(r'\b\d{20}\b', extracted_text)
                         if referencia:
                             referencia_pago = referencia.group()
