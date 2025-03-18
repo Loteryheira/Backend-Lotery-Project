@@ -347,7 +347,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite sobrin@?"
 
-
 #------------------- API Endpoints -------------------
 
 
@@ -395,12 +394,14 @@ def chat_twilio_endpoint():
     try:
         incoming_msg = request.values.get("Body", "").strip()
         sender_phone_number = request.values.get("From", "").strip()
+        media_url = request.values.get("MediaUrl0", "").strip()
 
         print(f"Body: {incoming_msg}")
         print(f"From: {sender_phone_number}")
+        print(f"MediaUrl: {media_url}")
 
         ai_response = chat_logic_simplified(
-            sender_phone_number, incoming_msg, ai_name="Tía Maria"
+            sender_phone_number, incoming_msg, ai_name="Tía Maria", image_url=media_url
         )
 
         resp = MessagingResponse()
