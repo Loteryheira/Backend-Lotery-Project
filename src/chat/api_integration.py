@@ -97,6 +97,7 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
 def download_image_from_url(image_url):
     try:
+        print(f"Intentando descargar la imagen desde la URL: {image_url}")
         response = requests.get(image_url)
         response.raise_for_status()
         image = Image.open(BytesIO(response.content))
@@ -108,6 +109,7 @@ def download_image_from_url(image_url):
         
         image_path = os.path.join(static_folder, "downloaded_image.png")
         image.save(image_path)
+        print(f"Imagen descargada y guardada en: {image_path}")
         return image_path
     except Exception as e:
         print(f"Error al descargar la imagen: {str(e)}")
