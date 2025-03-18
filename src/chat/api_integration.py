@@ -102,11 +102,13 @@ def extract_text_from_image(image_path):
         image = Image.open(image_path)
         # Usar pytesseract para extraer texto de la imagen
         extracted_text = pytesseract.image_to_string(image)
+        print(f"Texto extraído: {extracted_text}")  # Depuración
 
         # Buscar el número de referencia en el texto extraído
         referencia_match = re.search(r'Referencia\s+(\d{20})', extracted_text)
         if referencia_match:
             referencia = referencia_match.group(1)
+            print(f"Referencia encontrada: {referencia}")  # Depuración
             # Eliminar la imagen después de extraer el texto
             os.remove(image_path)
             return referencia
@@ -115,6 +117,7 @@ def extract_text_from_image(image_path):
             referencia_match = re.search(r'\b(\d{20})\b', extracted_text)
             if referencia_match:
                 referencia = referencia_match.group(1)
+                print(f"Referencia encontrada: {referencia}")  # Depuración
                 # Eliminar la imagen después de extraer el texto
                 os.remove(image_path)
                 return referencia
@@ -228,6 +231,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 # Extraer texto de la imagen
                 referencia_pago = extract_text_from_image(image_path)
                 if referencia_pago:
+                    print(f"Referencia extraída: {referencia_pago}")  # Depuración
                     pass  # La referencia se extrae correctamente
                 else:
                     return "No se encontró el número de referencia en la imagen."
