@@ -134,13 +134,11 @@ def download_image_from_url(image_url):
         print(f"Error al procesar la imagen: {str(e)}")
     return None
 
-def extract_text_from_image_with_gemini(image_url, api_key):
+def extract_text_from_image_with_gemini(image_path, api_key):
     try:
-        # Descargar la imagen desde la URL
-        image = requests.get(image_url)
-        if image.status_code != 200:
-            print(f"Error al descargar la imagen: {image.status_code}")
-            return None
+        # Leer la imagen desde el archivo local
+        with open(image_path, "rb") as image_file:
+            image_data = image_file.read()
 
         # Crear el cliente de Gemini
         client = genai.Client(api_key=api_key)
@@ -148,8 +146,8 @@ def extract_text_from_image_with_gemini(image_url, api_key):
         # Enviar la solicitud al modelo de Gemini
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp",
-            contents=["What is this image?",
-                      types.Part.from_bytes(data=image.content, mime_type="image/jpeg")]
+            contents=["Extract the reference number and amount from this image",
+                      types.Part.from_bytes(data=image_data, mime_type="image/jpeg")]
         )
 
         # Extraer el texto de la respuesta
@@ -263,18 +261,20 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
         elif etapa_venta == "validar_pago":
             if image_url:
-        
+                # Descargar la imagen desde la URL
                 image_path = download_image_from_url(image_url)
                 if image_path:
                     print(f"Imagen descargada y guardada en: {image_path}")
-                    api_key = os.getenv("GEMINI_API_KEY")  
+                    api_key = os.getenv("GEMINI_API_KEY")  # Asegúrate de que esta clave esté configurada
                     extracted_text = extract_text_from_image_with_gemini(image_path, api_key)
                     if extracted_text:
-                        referencia = re.search(r'\b\d{20}\b', extracted_text)
+                        print(f"Texto extraído completo: {extracted_text}")  # Depuración
+                        # Buscar el número de referencia en el texto extraído
+                        referencia = re.search(r'\b\d{20,30}\b', extracted_text)
                         if referencia:
                             referencia_pago = referencia.group()
                             print(f"Referencia extraída: {referencia_pago}")
-                    
+                            # Actualizar el prompt con la referencia extraída
                             prompt += f" Referencia: {referencia_pago}"
                         else:
                             return "No se encontró el número de referencia en la imagen."
@@ -283,14 +283,13 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 else:
                     return "No se pudo descargar la imagen."
             else:
-                referencia = re.search(r'\b\d{20}\b', prompt)
+                referencia = re.search(r'\b\d{20,30}\b', prompt)
                 if referencia:
                     referencia_pago = referencia.group()
                     print(f"Referencia extraída: {referencia_pago}")
                 else:
                     return "No se encontró el número de referencia en el mensaje."
-
-
+                
             # Verificar si la referencia existe y no ha sido usada
             comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
             if comprobante:
