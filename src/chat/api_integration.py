@@ -97,23 +97,39 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
 def download_image_from_url(image_url):
     try:
+        if not image_url:
+            print("URL de la imagen está vacía.")
+            return None
+
         print(f"Intentando descargar la imagen desde la URL: {image_url}")
-        response = requests.get(image_url)
+        response = requests.get(image_url, timeout=10)  # Agregar un tiempo de espera
         response.raise_for_status()
+
+        # Verificar el tipo de contenido
+        content_type = response.headers.get('Content-Type', '')
+        if 'image' not in content_type:
+            print(f"El contenido descargado no es una imagen. Content-Type: {content_type}")
+            return None
+
+        # Abrir la imagen
         image = Image.open(BytesIO(response.content))
-        
+
         # Verificar si la carpeta 'static' existe, si no, crearla
         static_folder = os.path.join(os.path.dirname(__file__), '..', 'static')
         if not os.path.exists(static_folder):
             os.makedirs(static_folder)
-        
+            print(f"Carpeta 'static' creada en: {static_folder}")
+
+        # Guardar la imagen
         image_path = os.path.join(static_folder, "downloaded_image.png")
         image.save(image_path)
         print(f"Imagen descargada y guardada en: {image_path}")
         return image_path
+    except requests.exceptions.RequestException as req_err:
+        print(f"Error de red al descargar la imagen: {str(req_err)}")
     except Exception as e:
-        print(f"Error al descargar la imagen: {str(e)}")
-        return None
+        print(f"Error al procesar la imagen: {str(e)}")
+    return None
 
 def extract_text_from_image(image_path):
     try:
@@ -404,9 +420,13 @@ def chat_twilio_endpoint():
         sender_phone_number = request.values.get("From", "").strip()
         media_url = request.values.get("MediaUrl0", "").strip()
 
-        print(f"Body: {incoming_msg}")
-        print(f"From: {sender_phone_number}")
-        print(f"MediaUrl: {media_url}")
+        print(f"Mensaje recibido: {incoming_msg}")
+        print(f"Número del remitente: {sender_phone_number}")
+        print(f"URL de la imagen recibida: {media_url}")
+
+        if not incoming_msg and not media_url:
+            print("El mensaje recibido está vacío y no contiene una URL de imagen.")
+            return "No se recibió ningún mensaje ni imagen.", 400
 
         ai_response = chat_logic_simplified(
             sender_phone_number, incoming_msg, ai_name="Tía Maria", image_url=media_url
@@ -416,9 +436,10 @@ def chat_twilio_endpoint():
         msg = resp.message()
         msg.body(ai_response)
 
+        print(f"Respuesta enviada al usuario: {ai_response}")
         return str(resp)
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error en el endpoint /api/v1/chat/twilio: {str(e)}")
         return str(e), 500
 
 @chatbot_api.route("/api/v1/sms", methods=["POST"])
