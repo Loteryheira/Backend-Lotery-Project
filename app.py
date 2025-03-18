@@ -3,6 +3,7 @@ from flask_cors import CORS
 from src.chat.api_integration import chatbot_api
 from dotenv import load_dotenv
 import os
+import logging
 
 app = Flask(__name__, static_folder="/src/static")
 
@@ -13,6 +14,12 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 CORS(app)
 
 app.register_blueprint(chatbot_api)
+
+# Configurar el nivel de logging
+app.logger.setLevel(logging.DEBUG)
+
+# Configurar el logger principal si necesitas ver más información del sistema
+logging.basicConfig(level=logging.DEBUG)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
