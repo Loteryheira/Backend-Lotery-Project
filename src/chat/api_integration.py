@@ -25,22 +25,6 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-
-def extract_text_from_image(image_path):
-    try:
-        # Abrir la imagen usando Pillow
-        image = Image.open(image_path)
-        # Usar pytesseract para extraer texto de la imagen
-        extracted_text = pytesseract.image_to_string(image)
-
-        # Eliminar la imagen después de extraer el texto
-        os.remove(image_path)
-
-        return extracted_text
-    except Exception as e:
-        print(f"Error al extraer texto de la imagen: {str(e)}")
-        return None
-
 #------------------------- Función para generar respuesta de IA --------------------------
 
 def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, audio_url):
@@ -109,6 +93,29 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
 #------------------------- Función simplificada para la lógica de chat --------------------------
 
+def extract_text_from_image(image_path):
+    """
+    Extrae texto de una imagen usando Tesseract OCR y elimina la imagen después de procesarla.
+    """
+    try:
+        # Abrir la imagen usando Pillow
+        image = Image.open(image_path)
+        # Usar pytesseract para extraer texto de la imagen
+        extracted_text = pytesseract.image_to_string(image)
+
+        # Buscar el número de referencia en el texto extraído
+        referencia_match = re.search(r'Referencia\s+(\d{20})', extracted_text)
+        if referencia_match:
+            referencia = referencia_match.group(1)
+            # Eliminar la imagen después de extraer el texto
+            os.remove(image_path)
+            return referencia
+        else:
+            return None
+    except Exception as e:
+        print(f"Error al extraer texto de la imagen: {str(e)}")
+        return None
+
 def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_path=None):
     user_name = "mi amor"
 
@@ -158,9 +165,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
         if etapa_venta == "inicio" or "hola" in prompt.lower():
             # Saludo inicial con IA y explicación del sistema
             ai_response = (
-                "¡Hola sobrin@! Bienvenido al sistema de tiempos apuntados. "
-                "Por favor, indícame los números que deseas apuntar y en qué sorteo (1pm, 4pm, 7pm). "
-                "Por ejemplo: 'Quiero apuntar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
+                "¡Hola mi amor! Bienvenido al sistema de apuestas. "
+                "Por favor, indícame los números que deseas apostar y en qué ronda (1pm, 4pm, 7pm). "
+                "Por ejemplo: 'Quiero apostar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
                 "¡Buena suerte!"
             )
             etapa_venta = "solicitar_numeros"
@@ -186,7 +193,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     )
                     if total_apostado + monto > 6000:
                         return (
-                            f"¡Upe! 😅 El apuntado total para el número {numero} "
+                            f"¡Upe! 😅 La apuesta total para el número {numero} "
                             f"excede los ¢6000 permitidos para esta ronda. "
                             f"Monto disponible: ¢{6000 - total_apostado}"
                         )
@@ -194,7 +201,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     apuestas_detalle.append({"numero": numero, "ronda": ronda, "monto": monto})
 
                 ai_response = (
-                    f"¡Listo! 💵 Apuntando un total de ¢{total_monto:,}.\n"
+                    f"¡Listo! 💵 Apostando un total de ¢{total_monto:,}.\n"
                     "**Instrucciones de pago:**\n"
                     "1. Transfiere al SINPE MÓVIL: 8888-8888\n"
                     "2. Envíe el NÚMERO DE REFERENCIA de su comprobante o una captura de pantalla\n"
@@ -211,16 +218,11 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
         elif etapa_venta == "validar_pago":
             if image_path:
                 # Extraer texto de la imagen
-                extracted_text = extract_text_from_image(image_path)
-                if extracted_text:
-                    # Buscar el número de referencia en el texto extraído
-                    referencia = re.search(r'\b\d{20}\b', extracted_text)
-                    if referencia:
-                        referencia_pago = referencia.group()
-                    else:
-                        return "No se encontró el número de referencia en la imagen."
+                referencia_pago = extract_text_from_image(image_path)
+                if referencia_pago:
+                    pass  # La referencia se extrae correctamente
                 else:
-                    return "No se pudo extraer texto de la imagen."
+                    return "No se encontró el número de referencia en la imagen."
             else:
                 referencia = re.search(r'\b\d{20}\b', prompt)
                 if referencia:
@@ -260,10 +262,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 factura += "¡Gracias por jugar con nosotros! 🍀"
 
                 ai_response = (
-                    f"✅ Validado\n\n{factura}\n\n"
+                    f"✅ Pago validado\n\n{factura}\n\n"
                     "Guarde este comprobante como respaldo oficial. "
-                    "¡Buena suerte sobrin@! 😊"
-                    "¡No se hacen cambios una vez realizada la transaccion!"
+                    "¡Buena suerte mi amor! 😊"
                 )
                 etapa_venta = "finalizar"
                 numeros = []
@@ -326,7 +327,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
     except Exception as e:
         print(f"Error crítico: {str(e)}")
-        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite sobrin@?"
+        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
 
 
 #------------------- API Endpoints -------------------
