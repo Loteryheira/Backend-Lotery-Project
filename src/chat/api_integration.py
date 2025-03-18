@@ -10,8 +10,6 @@ import random
 import re
 import pytesseract
 from PIL import Image
-import requests
-from io import BytesIO
 import re 
 
 load_dotenv()
@@ -26,6 +24,22 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+
+def extract_text_from_image(image_path):
+    try:
+        # Abrir la imagen usando Pillow
+        image = Image.open(image_path)
+        # Usar pytesseract para extraer texto de la imagen
+        extracted_text = pytesseract.image_to_string(image)
+
+        # Eliminar la imagen después de extraer el texto
+        os.remove(image_path)
+
+        return extracted_text
+    except Exception as e:
+        print(f"Error al extraer texto de la imagen: {str(e)}")
+        return None
 
 #------------------------- Función para generar respuesta de IA --------------------------
 
@@ -95,46 +109,7 @@ def generate_ai_response(ia_info, user_name, prompt, is_greeting, phone_number, 
 
 #------------------------- Función simplificada para la lógica de chat --------------------------
 
-def download_image(image_url):
-    try:
-        response = requests.get(image_url)
-        response.raise_for_status()
-        image = Image.open(BytesIO(response.content))
-        return image
-    except Exception as e:
-        print(f"Error al descargar la imagen: {str(e)}")
-        return None
-
-def extract_text_from_image(image):
-    """
-    Extrae texto de una imagen usando Tesseract OCR.
-    """
-    try:
-        # Usar pytesseract para extraer texto de la imagen
-        extracted_text = pytesseract.image_to_string(image)
-        print(f"Texto extraído: {extracted_text}")  # Depuración
-
-        # Buscar el número de referencia en el texto extraído
-        referencia_match = re.search(r'Referencia\s+(\d{20})', extracted_text)
-        if referencia_match:
-            referencia = referencia_match.group(1)
-            print(f"Referencia encontrada: {referencia}")  # Depuración
-            return referencia
-        else:
-            # Si no se encuentra una referencia de 20 dígitos, buscar cualquier secuencia de 20 dígitos
-            referencia_match = re.search(r'\b(\d{20})\b', extracted_text)
-            if referencia_match:
-                referencia = referencia_match.group(1)
-                print(f"Referencia encontrada: {referencia}")  # Depuración
-                return referencia
-
-        return None
-    except Exception as e:
-        print(f"Error al extraer texto de la imagen: {str(e)}")
-        return None
-
-
-def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_url=None):
+def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_path=None):
     user_name = "mi amor"
 
     if ai_name is None:
@@ -166,7 +141,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 "referencia_pago": "",
                 "ronda": "",
                 "ultima_actualizacion": datetime.now().isoformat(),
-                "apuestas": []
+                "apuestas": []  # Nuevo campo para almacenar apuestas detalladas
             }
             chat_session_id = chat_sessions_collection.insert_one(chat_session).inserted_id
         else:
@@ -181,16 +156,18 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
         # Manejo de saludos y despedidas con IA
         if etapa_venta == "inicio" or "hola" in prompt.lower():
+            # Saludo inicial con IA y explicación del sistema
             ai_response = (
-                "¡Hola mi amor! Bienvenido al sistema de apuestas. "
-                "Por favor, indícame los números que deseas apostar y en qué ronda (1pm, 4pm, 7pm). "
-                "Por ejemplo: 'Quiero apostar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
+                "¡Hola sobrin@! Bienvenido al sistema de tiempos apuntados. "
+                "Por favor, indícame los números que deseas apuntar y en qué sorteo (1pm, 4pm, 7pm). "
+                "Por ejemplo: 'Quiero apuntar 200 al 8 para las 1pm, 400 al 9 para las 4pm y 150 al 10 para las 7pm'.\n"
                 "¡Buena suerte!"
             )
             etapa_venta = "solicitar_numeros"
 
         elif etapa_venta == "solicitar_numeros":
             try:
+                # Analizar el mensaje para obtener números, montos y rondas
                 apuestas_raw = re.findall(r'(\d+)\s+al\s+(\d{1,2})\s+para\s+las\s+(\d{1,2}(?:am|pm))', prompt)
                 if not apuestas_raw:
                     raise ValueError("Formato de apuesta no válido.")
@@ -203,12 +180,13 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     total_monto += monto
                     ronda = ronda.lower()
 
+                    # Verificar que la suma total de las apuestas para cada número no exceda los 6000
                     total_apostado = sum(
                         bet["monto"] for bet in sales_collection.find({"numero": numero, "ronda": ronda})
                     )
                     if total_apostado + monto > 6000:
                         return (
-                            f"¡Upe! 😅 La apuesta total para el número {numero} "
+                            f"¡Upe! 😅 El apuntado total para el número {numero} "
                             f"excede los ¢6000 permitidos para esta ronda. "
                             f"Monto disponible: ¢{6000 - total_apostado}"
                         )
@@ -216,7 +194,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     apuestas_detalle.append({"numero": numero, "ronda": ronda, "monto": monto})
 
                 ai_response = (
-                    f"¡Listo! 💵 Apostando un total de ¢{total_monto:,}.\n"
+                    f"¡Listo! 💵 Apuntando un total de ¢{total_monto:,}.\n"
                     "**Instrucciones de pago:**\n"
                     "1. Transfiere al SINPE MÓVIL: 8888-8888\n"
                     "2. Envíe el NÚMERO DE REFERENCIA de su comprobante o una captura de pantalla\n"
@@ -231,17 +209,18 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 ai_response = "¡Upe! 😅 Monto inválido o ronda no especificada."
 
         elif etapa_venta == "validar_pago":
-            if image_url:
-                # Descargar y procesar la imagen
-                image = download_image(image_url)
-                if image:
-                    referencia_pago = extract_text_from_image(image)
-                    if referencia_pago:
-                        print(f"Referencia extraída: {referencia_pago}")  # Depuración
+            if image_path:
+                # Extraer texto de la imagen
+                extracted_text = extract_text_from_image(image_path)
+                if extracted_text:
+                    # Buscar el número de referencia en el texto extraído
+                    referencia = re.search(r'\b\d{20}\b', extracted_text)
+                    if referencia:
+                        referencia_pago = referencia.group()
                     else:
                         return "No se encontró el número de referencia en la imagen."
                 else:
-                    return "No se pudo descargar la imagen."
+                    return "No se pudo extraer texto de la imagen."
             else:
                 referencia = re.search(r'\b\d{20}\b', prompt)
                 if referencia:
@@ -262,6 +241,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     monto = apuesta["monto"]
                     factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
 
+                    # Guardar la apuesta con el ID del registro
                     sales_record = sales_collection.insert_one({
                         "telefono": phone_number,
                         "numero": numero,
@@ -272,6 +252,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                         "factura": factura
                     })
 
+                    # Incluir el ID del registro en la factura
                     factura += f"- ID de Registro: {sales_record.inserted_id}\n"
 
                 factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
@@ -279,20 +260,23 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 factura += "¡Gracias por jugar con nosotros! 🍀"
 
                 ai_response = (
-                    f"✅ Pago validado\n\n{factura}\n\n"
+                    f"✅ Validado\n\n{factura}\n\n"
                     "Guarde este comprobante como respaldo oficial. "
-                    "¡Buena suerte mi amor! 😊"
+                    "¡Buena suerte sobrin@! 😊"
+                    "¡No se hacen cambios una vez realizada la transaccion!"
                 )
                 etapa_venta = "finalizar"
                 numeros = []
                 monto = 0
                 apuestas = []
 
+                # Marcar la referencia como usada
                 comprobantes_collection.update_one(
                     {"referencia": referencia_pago},
                     {"$set": {"usado": True}}
                 )
 
+                # No enviar mensajes adicionales después de finalizar
                 return ai_response
 
             else:
@@ -303,6 +287,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
         # Manejo de mensajes inesperados
         elif etapa_venta in ["solicitar_numeros", "solicitar_monto", "validar_pago"]:
+            # Si el mensaje no coincide con la etapa actual, la IA responde y redirige
             ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
             ai_response += "\n\nVolvamos al proceso de venta. ¿En qué puedo ayudarte con tu apuesta?"
 
@@ -316,7 +301,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
             "numeros": numeros,
             "monto": monto,
             "referencia_pago": referencia_pago,
-            "ronda": "",
+            "ronda": "",  # No se necesita almacenar una ronda general
             "apuestas": apuestas,
             "ultima_actualizacion": datetime.now().isoformat()
         }
@@ -341,9 +326,11 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
     except Exception as e:
         print(f"Error crítico: {str(e)}")
-        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
+        return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite sobrin@?"
+
 
 #------------------- API Endpoints -------------------
+
 
 @chatbot_api.route("/api/v1/amigo", methods=["POST"])
 def create_friend():
