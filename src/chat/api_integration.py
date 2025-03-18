@@ -263,7 +263,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
 
         elif etapa_venta == "validar_pago":
             if image_url:
-                # Descargar la imagen desde la URL
                 image_path = download_image_from_url(image_url)
                 if image_path:
                     print(f"Imagen descargada y guardada en: {image_path}")
