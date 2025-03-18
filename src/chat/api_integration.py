@@ -98,6 +98,11 @@ def extract_text_from_image(image_path):
     Extrae texto de una imagen usando Tesseract OCR y elimina la imagen después de procesarla.
     """
     try:
+        # Verificar si la ruta de la imagen es accesible
+        if not os.path.exists(image_path):
+            print(f"La ruta de la imagen no existe: {image_path}")
+            return None
+
         # Abrir la imagen usando Pillow
         image = Image.open(image_path)
         # Usar pytesseract para extraer texto de la imagen
@@ -126,6 +131,7 @@ def extract_text_from_image(image_path):
     except Exception as e:
         print(f"Error al extraer texto de la imagen: {str(e)}")
         return None
+
 
 def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_path=None):
     user_name = "mi amor"
