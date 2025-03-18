@@ -111,7 +111,15 @@ def extract_text_from_image(image_path):
             os.remove(image_path)
             return referencia
         else:
-            return None
+            # Si no se encuentra una referencia de 20 dígitos, buscar cualquier secuencia de 20 dígitos
+            referencia_match = re.search(r'\b(\d{20})\b', extracted_text)
+            if referencia_match:
+                referencia = referencia_match.group(1)
+                # Eliminar la imagen después de extraer el texto
+                os.remove(image_path)
+                return referencia
+
+        return None
     except Exception as e:
         print(f"Error al extraer texto de la imagen: {str(e)}")
         return None
@@ -328,7 +336,6 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
     except Exception as e:
         print(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite mi amor?"
-
 
 #------------------- API Endpoints -------------------
 
