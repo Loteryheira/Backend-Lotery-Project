@@ -33,7 +33,6 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 #------------------------- Función para extraer la referencia y el monto de un correo --------------------------    
 
-
 def extract_reference_from_email():
     email_user = os.getenv("EMAIL_USER")
     email_pass = os.getenv("EMAIL_PASS")
@@ -60,7 +59,7 @@ def extract_reference_from_email():
                     msg = email.message_from_bytes(response_part[1])
                     subject = decode_header(msg["Subject"])[0][0]
                     if isinstance(subject, bytes):
-                        subject = subject.decode()
+                        subject = subject.decode('utf-8')  # Asegúrate de usar UTF-8
 
                     app.logger.info(f"Procesando correo con asunto: {subject}")
 
@@ -70,14 +69,14 @@ def extract_reference_from_email():
                             content_disposition = str(part.get("Content-Disposition"))
 
                             if "attachment" not in content_disposition:
-                                body = part.get_payload(decode=True).decode()
+                                body = part.get_payload(decode=True).decode('utf-8')  # Asegúrate de usar UTF-8
                                 referencia = re.search(r'Referencia SINPE:\s+(\d{20,30})', body)
                                 monto = re.search(r'Monto Neto:\s+([\d,\.]+)', body)
                                 if referencia and monto:
                                     app.logger.info(f"Referencia encontrada: {referencia.group(1)}, Monto: {monto.group(1)}")
                                     return referencia.group(1), monto.group(1)
                     else:
-                        body = msg.get_payload(decode=True).decode()
+                        body = msg.get_payload(decode=True).decode('utf-8')  # Asegúrate de usar UTF-8
                         referencia = re.search(r'Referencia SINPE:\s+(\d{20,30})', body)
                         monto = re.search(r'Monto Neto:\s+([\d,\.]+)', body)
                         if referencia and monto:

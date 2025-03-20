@@ -26,6 +26,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    encoding='utf-8'  # Asegúrate de usar UTF-8
 )
 
 # Reducir el nivel de logs para PyMongo
