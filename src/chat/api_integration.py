@@ -14,6 +14,9 @@ import requests
 from io import BytesIO
 from google import genai
 from google.genai import types
+import imaplib
+import email
+from email.header import decode_header
 
 load_dotenv()
 
@@ -27,6 +30,60 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+#------------------------- Función para extraer la referencia y el monto de un correo --------------------------    
+
+
+def extract_reference_from_email():
+    email_user = os.getenv("EMAIL_USER")
+    email_pass = os.getenv("EMAIL_PASS")
+    imap_server = os.getenv("IMAP_SERVER")
+    imap_port = int(os.getenv("IMAP_PORT", 993))
+
+    try:
+        # Conectar al servidor IMAP
+        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        mail.login(email_user, email_pass)
+        mail.select("inbox")
+
+        # Buscar correos no leídos del remitente específico con el asunto específico
+        status, messages = mail.search(None, '(UNSEEN FROM "BPNotifica@bpdc.fi.cr" SUBJECT "comprobante de transacción SINPE")')
+        email_ids = messages[0].split()
+
+        for email_id in email_ids:
+            status, msg_data = mail.fetch(email_id, '(RFC822)')
+            for response_part in msg_data:
+                if isinstance(response_part, tuple):
+                    msg = email.message_from_bytes(response_part[1])
+                    subject = decode_header(msg["Subject"])[0][0]
+                    if isinstance(subject, bytes):
+                        subject = subject.decode()
+
+                    # Procesar el contenido del correo
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            content_type = part.get_content_type()
+                            content_disposition = str(part.get("Content-Disposition"))
+
+                            if "attachment" not in content_disposition:
+                                body = part.get_payload(decode=True).decode()
+                                # Buscar la referencia y el monto en el cuerpo del correo
+                                referencia = re.search(r'Referencia SINPE:\s+(\d{20,30})', body)
+                                monto = re.search(r'Monto Neto:\s+([\d,\.]+)', body)
+                                if referencia and monto:
+                                    return referencia.group(1), monto.group(1)
+                    else:
+                        body = msg.get_payload(decode=True).decode()
+                        referencia = re.search(r'Referencia SINPE:\s+(\d{20,30})', body)
+                        monto = re.search(r'Monto Neto:\s+([\d,\.]+)', body)
+                        if referencia and monto:
+                            return referencia.group(1), monto.group(1)
+
+        mail.logout()
+        return None, None
+    except Exception as e:
+        print(f"Error al leer el correo: {str(e)}")
+        return None, None
 
 #------------------------- Función para generar respuesta de IA --------------------------
 
