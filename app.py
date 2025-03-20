@@ -46,9 +46,11 @@ def check_emails():
 schedule.every(1).minute.do(check_emails)
 
 def run_scheduler():
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    with app.app_context():
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+
 
 # Inicia el scheduler en un hilo separado
 scheduler_thread = threading.Thread(target=run_scheduler)
