@@ -47,7 +47,7 @@ def extract_reference_from_email():
         mail.select("inbox")
 
         # Buscar correos no leídos del remitente específico con el asunto específico
-        status, messages = mail.search(None, '(UNSEEN FROM "BPNotifica@bpdc.fi.cr" SUBJECT "comprobante de transacción SINPE")')
+        status, messages = mail.search(None, '(UNSEEN FROM "adrianrincon102001@gmail.com" SUBJECT "comprobante de transacción SINPE")')
         email_ids = messages[0].split()
 
         for email_id in email_ids:
