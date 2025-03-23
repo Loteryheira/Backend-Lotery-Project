@@ -11,12 +11,13 @@ import re
 from PIL import Image
 import re 
 import requests
+import time
+import threading
 from io import BytesIO
 from google import genai
 from google.genai import types
-import imaplib
-import email
-from email.header import decode_header
+from src.chat.correo_verificacion import extraer_mensajes_gmail  
+
 
 load_dotenv()
 
@@ -30,65 +31,6 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-#------------------------- Función para extraer la referencia y el monto de un correo --------------------------    
-
-def extract_reference_from_email():
-    email_user = os.getenv("EMAIL_USER")
-    email_pass = os.getenv("EMAIL_PASS")
-    imap_server = os.getenv("IMAP_SERVER")
-    imap_port = int(os.getenv("IMAP_PORT", 993))
-
-    try:
-        app.logger.info("Conectando al servidor IMAP...")
-        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
-        mail.login(email_user, email_pass)
-        app.logger.info("Conexión exitosa al servidor IMAP.")
-
-        mail.select("inbox")
-        app.logger.info("Seleccionando la bandeja de entrada.")
-
-        status, messages = mail.search(None, '(UNSEEN FROM "adrianrincon102001@gmail.com" SUBJECT "comprobante de transacción SINPE")')
-        email_ids = messages[0].split()
-        app.logger.info(f"Correos no leídos encontrados: {email_ids}")
-
-        for email_id in email_ids:
-            status, msg_data = mail.fetch(email_id, '(RFC822)')
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    msg = email.message_from_bytes(response_part[1])
-                    subject = decode_header(msg["Subject"])[0][0]
-                    if isinstance(subject, bytes):
-                        subject = subject.decode('utf-8')  # Asegúrate de usar UTF-8
-
-                    app.logger.info(f"Procesando correo con asunto: {subject}")
-
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            content_type = part.get_content_type()
-                            content_disposition = str(part.get("Content-Disposition"))
-
-                            if "attachment" not in content_disposition:
-                                body = part.get_payload(decode=True).decode('utf-8')  # Asegúrate de usar UTF-8
-                                referencia = re.search(r'Referencia SINPE:\s+(\d{20,30})', body)
-                                monto = re.search(r'Monto Neto:\s+([\d,\.]+)', body)
-                                if referencia and monto:
-                                    app.logger.info(f"Referencia encontrada: {referencia.group(1)}, Monto: {monto.group(1)}")
-                                    return referencia.group(1), monto.group(1)
-                    else:
-                        body = msg.get_payload(decode=True).decode('utf-8')  # Asegúrate de usar UTF-8
-                        referencia = re.search(r'Referencia SINPE:\s+(\d{20,30})', body)
-                        monto = re.search(r'Monto Neto:\s+([\d,\.]+)', body)
-                        if referencia and monto:
-                            app.logger.info(f"Referencia encontrada: {referencia.group(1)}, Monto: {monto.group(1)}")
-                            return referencia.group(1), monto.group(1)
-
-        mail.logout()
-        app.logger.info("No se encontraron correos con la referencia y el monto especificados.")
-        return None, None
-    except Exception as e:
-        app.logger.error(f"Error al leer el correo: {str(e)}")
-        return None, None
 
 #------------------------- Función para generar respuesta de IA --------------------------
 
@@ -221,28 +163,35 @@ def extract_text_from_image_with_gemini(image_path, api_key):
         app.logger.info(f"Error al usar Gemini API: {str(e)}")
         return None
 
-# Luego, en tu función chat_logic_simplified, puedes usar download_image_from_url para descargar la imagen
-def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, image_url=None):
-    user_name = "mi amor"
+#------------------------- Función para extraer el monto de un texto --------------------------
 
+def extract_amount(text):
+    # Expresión regular para extraer el monto, permitiendo comas como separadores de miles
+    match = re.search(r'\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b', text)
+    if match:
+        amount_str = match.group().replace(",", "")
+        return int(float(amount_str))  # Convertir a entero
+    return None
+
+#------------------------- Función simplificada para la lógica de chat --------------------------
+
+def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
     if ai_name is None:
         return "¡Ay mi Dios! Algo salió mal, vuelva a intentarlo más tarde."
 
     try:
+        # Obtener información de la IA
         ia_info = friends_collection.find_one({"name": "Tía Maria"})
         if not ia_info:
             return "¡Upe! La Tía María está ocupada, intente más tarde."
 
-        atributos = ia_info.get('atributos', {})
-        modismos = atributos.get('estilo_comunicacion', {}).get('modismos', ['mae', 'pura vida'])
-        frases_venta = ia_info.get('frases_venta', [])
+        # Atributos de la IA
         cierres = ia_info.get('cierre_venta', {}).get('frases', [])
 
-        # Buscar o crear una sesión de chat existente
+        # Buscar o crear una sesión de chat
         chat_session = chat_sessions_collection.find_one(
             {"phone_number": phone_number, "ia_name": "Tía Maria"}
         )
-
         if not chat_session:
             chat_session = {
                 "phone_number": phone_number,
@@ -252,24 +201,16 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 "numeros": [],
                 "monto": 0,
                 "referencia_pago": "",
-                "ronda": "",
                 "ultima_actualizacion": datetime.now().isoformat(),
-                "apuestas": []  # Nuevo campo para almacenar apuestas detalladas
+                "apuestas": []
             }
-            chat_session_id = chat_sessions_collection.insert_one(chat_session).inserted_id
-        else:
-            chat_session_id = chat_session["_id"]
+            chat_sessions_collection.insert_one(chat_session)
 
         etapa_venta = chat_session.get("etapa_venta", "inicio")
-        numeros = chat_session.get("numeros", [])
-        monto = chat_session.get("monto", 0)
-        referencia_pago = chat_session.get("referencia_pago", "")
-        ronda = chat_session.get("ronda", "")
         apuestas = chat_session.get("apuestas", [])
 
-        # Manejo de saludos y despedidas con IA
+        # Etapa: Inicio
         if etapa_venta == "inicio" or "hola" in prompt.lower():
-            # Saludo inicial con IA y explicación del sistema
             ai_response = (
                 "¡Hola sobrin@! Bienvenido al sistema de tiempos apuntados. "
                 "Por favor, indícame los números que deseas apuntar y en qué sorteo (1pm, 4pm, 7pm). "
@@ -278,9 +219,9 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
             )
             etapa_venta = "solicitar_numeros"
 
+        # Etapa: Solicitar números
         elif etapa_venta == "solicitar_numeros":
             try:
-                # Analizar el mensaje para obtener números, montos y rondas
                 apuestas_raw = re.findall(r'(\d+)\s+al\s+(\d{1,2})\s+para\s+las\s+(\d{1,2}(?:am|pm))', prompt)
                 if not apuestas_raw:
                     raise ValueError("Formato de apuesta no válido.")
@@ -291,20 +232,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                 for monto_str, numero, ronda in apuestas_raw:
                     monto = int(monto_str)
                     total_monto += monto
-                    ronda = ronda.lower()
-
-                    # Verificar que la suma total de las apuestas para cada número no exceda los 6000
-                    total_apostado = sum(
-                        bet["monto"] for bet in sales_collection.find({"numero": numero, "ronda": ronda})
-                    )
-                    if total_apostado + monto > 6000:
-                        return (
-                            f"¡Upe! 😅 El apuntado total para el número {numero} "
-                            f"excede los ¢6000 permitidos para esta ronda. "
-                            f"Monto disponible: ¢{6000 - total_apostado}"
-                        )
-
-                    apuestas_detalle.append({"numero": numero, "ronda": ronda, "monto": monto})
+                    apuestas_detalle.append({"numero": numero, "ronda": ronda.lower(), "monto": monto})
 
                 ai_response = (
                     f"¡Listo! 💵 Apuntando un total de ¢{total_monto:,}.\n"
@@ -314,144 +242,75 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, audio_url=None, im
                     f"{random.choice(cierres)} 🍀"
                 )
                 etapa_venta = "validar_pago"
-                numeros = [bet["numero"] for bet in apuestas_detalle]
                 apuestas = apuestas_detalle
 
             except Exception as e:
-                print(f"Error monto: {str(e)}")
-                ai_response = "¡Upe! 😅 Monto inválido o ronda no especificada."
+                app.logger.error(f"Error al procesar las apuestas: {str(e)}")
+                ai_response = "¡Upe! 😅 Formato de apuesta inválido. Por favor, intente nuevamente."
 
+        # Etapa: Validar pago
         elif etapa_venta == "validar_pago":
+            ai_response = "Por favor, espere mientras validamos su comprobante de pago. 🙏"
             if image_url:
-                # Descargar la imagen desde la URL
                 image_path = download_image_from_url(image_url)
                 if image_path:
-                    app.logger.info(f"Imagen descargada y guardada en: {image_path}")
-                    api_key = os.getenv("GEMINI_API_KEY")  # Asegúrate de que esta clave esté configurada
-                    extracted_text = extract_text_from_image_with_gemini(image_path, api_key)
+                    extracted_text = extract_text_from_image_with_gemini(image_path, os.getenv("GEMINI_API_KEY"))
                     if extracted_text:
-                        app.logger.info(f"Texto extraído completo: {extracted_text}")  # Depuración
-                        # Buscar el número de referencia en el texto extraído
-                        referencia = re.search(r'\b\d{20,30}\b', extracted_text)
-                        if referencia:
-                            referencia_pago = referencia.group()
-                            app.logger.info(f"Referencia extraída: {referencia_pago}")
-                            # Actualizar el prompt con la referencia extraída
-                            prompt += f" Referencia: {referencia_pago}"
+                        referencia_match = re.search(r'\b\d{20,30}\b', extracted_text)
+                        monto_match = re.search(r'\b\d+[\.,]?\d{2}\b', extracted_text)
+                        if referencia_match and monto_match:
+                            referencia_pago = referencia_match.group()
+                            monto_pago = extract_amount(extracted_text)
+
+                            # Iniciar espera de 2 minutos para verificar el comprobante
+                            start_time = datetime.now()
+                            while (datetime.now() - start_time).total_seconds() < 120:
+                                comprobante = comprobantes_collection.find_one({
+                                    "referencia": referencia_pago,
+                                    "monto": monto_pago,
+                                    "usado": False
+                                })
+                                if comprobante:
+                                    app.logger.info(f"Comprobante encontrado: {comprobante}")
+                                    comprobantes_collection.update_one(
+                                        {"_id": comprobante["_id"]},
+                                        {"$set": {"usado": True}}
+                                    )
+                                    factura = (
+                                        f"🎉 *¡Comprobante Validado!*\n\n"
+                                        f"🧾 *Factura de Venta*\n"
+                                        f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                                        f"💳 Referencia de Pago: {referencia_pago}\n"
+                                        f"💰 Monto Total: ¢{monto_pago:,}\n"
+                                        "🔢 Números Apuntados:\n"
+                                    )
+                                    for apuesta in apuestas:
+                                        factura += f"   - Número: {apuesta['numero']} | Ronda: {apuesta['ronda']} | Monto: ¢{apuesta['monto']:,}\n"
+                                    factura += "\n🍀 ¡Gracias por confiar en nosotros! ¡Buena suerte en el sorteo!\n⚠️ *Nota:* No realizamos devoluciones. 🙏"
+                                    ai_response = factura
+                                    break  
+                                time.sleep(10)  
+                            if ai_response == "Por favor, espere mientras validamos su comprobante de pago. 🙏":
+                                ai_response = "No se encontró el comprobante en el tiempo límite. Por favor, intente nuevamente."
                         else:
-                            return "No se encontró el número de referencia en la imagen."
+                            ai_response = "No se encontró referencia o monto en la imagen."
                     else:
-                        return "No se pudo extraer texto de la imagen."
+                        ai_response = "No se pudo extraer texto de la imagen."
                 else:
-                    return "No se pudo descargar la imagen."
+                    ai_response = "No se pudo descargar la imagen."
             else:
-                referencia = re.search(r'\b\d{20,30}\b', prompt)
-                if referencia:
-                    referencia_pago = referencia.group()
-                    app.logger.info(f"Referencia extraída: {referencia_pago}")
-                else:
-                    return "No se encontró el número de referencia en el mensaje."
-                
-            # Verificar si la referencia existe y no ha sido usada
-            comprobante = comprobantes_collection.find_one({"referencia": referencia_pago, "usado": False})
-            if comprobante:
-                factura = (
-                    f"📄 **COMPROBANTE OFICIAL**\n"
-                    f"📱 Cliente: {phone_number}\n"
-                    f"🔢 Números y Rondas:\n"
-                )
+                ai_response = "No se proporcionó una URL de imagen."
 
-                for apuesta in apuestas:
-                    numero = apuesta["numero"]
-                    ronda = apuesta["ronda"]
-                    monto = apuesta["monto"]
-                    factura += f"- Número: {numero}, Ronda: {ronda}, Monto: ¢{monto:,}\n"
-
-                    # Guardar la apuesta con el ID del registro
-                    sales_record = sales_collection.insert_one({
-                        "telefono": phone_number,
-                        "numero": numero,
-                        "monto": monto,
-                        "referencia": referencia_pago,
-                        "ronda": ronda,
-                        "fecha": datetime.now().isoformat(),
-                        "factura": factura
-                    })
-
-                    # Incluir el ID del registro en la factura
-                    factura += f"- ID de Registro: {sales_record.inserted_id}\n"
-
-                factura += f"💵 Monto Total: ¢{sum(apuesta['monto'] for apuesta in apuestas):,}\n"
-                factura += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-                factura += "¡Gracias por jugar con nosotros! 🍀"
-
-                ai_response = (
-                    f"✅ Validado\n\n{factura}\n\n"
-                    "Guarde este comprobante como respaldo oficial. "
-                    "¡Buena suerte sobrin@! 😊"
-                    "¡No se hacen cambios una vez realizada la transaccion!"
-                )
-                etapa_venta = "finalizar"
-                numeros = []
-                monto = 0
-                apuestas = []
-
-                # Marcar la referencia como usada
-                comprobantes_collection.update_one(
-                    {"referencia": referencia_pago},
-                    {"$set": {"usado": True}}
-                )
-
-                # No enviar mensajes adicionales después de finalizar
-                return ai_response
-
-            else:
-                ai_response = (
-                    "¡Ay mi Dios! 😱 Esta referencia ya ha sido utilizada o no es válida. "
-                    "Por favor, proporcione una referencia válida y no utilizada."
-                )
-
-        # Manejo de mensajes inesperados
-        elif etapa_venta in ["solicitar_numeros", "solicitar_monto", "validar_pago"]:
-            # Si el mensaje no coincide con la etapa actual, la IA responde y redirige
-            ai_response = generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
-            ai_response += "\n\nVolvamos al proceso de venta. ¿En qué puedo ayudarte con tu apuesta?"
-
-        # Despedida con IA
-        if etapa_venta == "finalizar":
-            ai_response += "\n\n" + generate_ai_response(ia_info, user_name, prompt, is_greeting=False, phone_number=phone_number, audio_url=audio_url)
-
-        # Actualización de base de datos
-        update_data = {
-            "etapa_venta": etapa_venta,
-            "numeros": numeros,
-            "monto": monto,
-            "referencia_pago": referencia_pago,
-            "ronda": "",  # No se necesita almacenar una ronda general
-            "apuestas": apuestas,
-            "ultima_actualizacion": datetime.now().isoformat()
-        }
-
+        # Actualizar la sesión de chat
         chat_sessions_collection.update_one(
-            {"_id": chat_session_id},
-            {
-                "$set": update_data,
-                "$push": {
-                    "chat_history": {
-                        "$each": [
-                            {"role": "user", "content": prompt},
-                            {"role": "assistant", "content": ai_response}
-                        ],
-                        "$slice": -20
-                    }
-                }
-            }
+            {"_id": chat_session["_id"]},
+            {"$set": {"etapa_venta": etapa_venta, "apuestas": apuestas}}
         )
 
         return ai_response
 
     except Exception as e:
-        print(f"Error crítico: {str(e)}")
+        app.logger.error(f"Error crítico: {str(e)}")
         return "¡Ay mi Dios! Se me cruzaron los cables. ¿Me repite sobrin@?"
 
 #------------------- API Endpoints -------------------

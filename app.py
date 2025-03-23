@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
-from src.chat.api_integration import chatbot_api
+from src.chat.api_integration import chatbot_api, extraer_mensajes_gmail
 from dotenv import load_dotenv
 import os
 import logging
@@ -32,17 +32,21 @@ logging.basicConfig(
 # Reducir el nivel de logs para PyMongo
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
-# Importa tu función existente para extraer referencias de correos
-from src.chat.api_integration import extract_reference_from_email
-
+# Función para buscar correos cada minuto
 def check_emails():
-    # Llama a tu función para extraer referencias de correos
-    reference, amount = extract_reference_from_email()
-    if reference and amount:
-        # Aquí puedes agregar el código para procesar la referencia y el monto
-        app.logger.info(f"Nueva referencia encontrada: {reference}, Monto: {amount}")
+    try:
+        app.logger.info("[DEBUG] Iniciando proceso de búsqueda de correos...")
+        remitente = "adrianrincon102001@gmail.com"
+        result = extraer_mensajes_gmail(remitente)
+        if result:
+            referencia, monto = result
+            app.logger.info(f"Correo encontrado: Referencia {referencia}, Monto {monto}")
+        else:
+            app.logger.info("No hay mensajes nuevos sin leer.")
+    except Exception as e:
+        app.logger.error(f"Error en el cron job de búsqueda de correos: {str(e)}")
 
-# Configura el cron job para ejecutarse cada minuto
+# Configurar el cron job para ejecutarse cada minuto
 schedule.every(1).minute.do(check_emails)
 
 def run_scheduler():
@@ -50,7 +54,6 @@ def run_scheduler():
         while True:
             schedule.run_pending()
             time.sleep(1)
-
 
 # Inicia el scheduler en un hilo separado
 scheduler_thread = threading.Thread(target=run_scheduler)
