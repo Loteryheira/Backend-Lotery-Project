@@ -250,7 +250,12 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
 
         # Etapa: Validar pago
         elif etapa_venta == "validar_pago":
-            ai_response = "Por favor, espere mientras validamos su comprobante de pago. 🙏"
+            # Enviar mensaje inicial de procesamiento al usuario
+            try:
+                ai_response = "Procesando su comprobante de pago... 🕒"
+            except Exception as e:
+                app.logger.error(f"Error al enviar mensaje de procesamiento: {str(e)}")
+
             if image_url:
                 image_path = download_image_from_url(image_url)
                 if image_path:
@@ -287,19 +292,36 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
                                     for apuesta in apuestas:
                                         factura += f"   - Número: {apuesta['numero']} | Ronda: {apuesta['ronda']} | Monto: ¢{apuesta['monto']:,}\n"
                                     factura += "\n🍀 ¡Gracias por confiar en nosotros! ¡Buena suerte en el sorteo!\n⚠️ *Nota:* No realizamos devoluciones. 🙏"
-                                    ai_response = factura
-                                    break  
-                                time.sleep(10)  
-                            if ai_response == "Por favor, espere mientras validamos su comprobante de pago. 🙏":
-                                ai_response = "No se encontró el comprobante en el tiempo límite. Por favor, intente nuevamente."
+
+                                    # Guardar la factura en la colección `sales`
+                                    sales_collection.insert_one({
+                                        "phone_number": phone_number,
+                                        "referencia_pago": referencia_pago,
+                                        "monto": monto_pago,
+                                        "apuestas": apuestas,
+                                        "fecha": datetime.now().isoformat(),
+                                        "factura": factura
+                                    })
+
+                                    # Enviar la factura al usuario
+                                    try:
+                                        ai_response = factura
+                                    except Exception as e:
+                                        app.logger.error(f"Error al enviar la factura: {str(e)}")
+
+                                    return factura
+                                time.sleep(10)
+
+                            # Si no se encontró el comprobante dentro del tiempo límite
+                            return "No se encontró el comprobante en el tiempo límite. Por favor, intente nuevamente."
                         else:
-                            ai_response = "No se encontró referencia o monto en la imagen."
+                            return "No se encontró referencia o monto en la imagen."
                     else:
-                        ai_response = "No se pudo extraer texto de la imagen."
+                        return "No se pudo extraer texto de la imagen."
                 else:
-                    ai_response = "No se pudo descargar la imagen."
+                    return "No se pudo descargar la imagen."
             else:
-                ai_response = "No se proporcionó una URL de imagen."
+                return "No se proporcionó una URL de imagen."
 
         # Actualizar la sesión de chat
         chat_sessions_collection.update_one(
@@ -369,10 +391,12 @@ def chat_twilio_endpoint():
             app.logger.info("El mensaje recibido está vacío y no contiene una URL de imagen.")
             return "No se recibió ningún mensaje ni imagen.", 400
 
+        # Llamar a la lógica del chat
         ai_response = chat_logic_simplified(
             sender_phone_number, incoming_msg, ai_name="Tía Maria", image_url=media_url
         )
 
+        # Crear la respuesta para Twilio
         resp = MessagingResponse()
         msg = resp.message()
         msg.body(ai_response)
@@ -380,9 +404,9 @@ def chat_twilio_endpoint():
         app.logger.info(f"Respuesta enviada al usuario: {ai_response}")
         return str(resp)
     except Exception as e:
-        app.logger.info(f"Error en el endpoint /api/v1/chat/twilio: {str(e)}")
+        app.logger.error(f"Error en el endpoint /api/v1/chat/twilio: {str(e)}")
         return str(e), 500
-
+    
 @chatbot_api.route("/api/v1/sms", methods=["POST"])
 def handle_sms():
     try:

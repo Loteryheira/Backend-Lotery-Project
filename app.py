@@ -46,8 +46,8 @@ def check_emails():
     except Exception as e:
         app.logger.error(f"Error en el cron job de búsqueda de correos: {str(e)}")
 
-# Configurar el cron job para ejecutarse cada minuto
-schedule.every(1).minute.do(check_emails)
+# Configurar el cron job para ejecutarse cada 30 segundos
+schedule.every(30).seconds.do(check_emails)
 
 def run_scheduler():
     with app.app_context():
