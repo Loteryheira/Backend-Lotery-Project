@@ -202,12 +202,18 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
                 "monto": 0,
                 "referencia_pago": "",
                 "ultima_actualizacion": datetime.now().isoformat(),
-                "apuestas": []
+                "apuestas": [],
+                "procesando_pago": False  # Nuevo campo para indicar si se está procesando un pago
             }
             chat_sessions_collection.insert_one(chat_session)
 
         etapa_venta = chat_session.get("etapa_venta", "inicio")
         apuestas = chat_session.get("apuestas", [])
+        procesando_pago = chat_session.get("procesando_pago", False)
+
+        # Si se está procesando un pago y el usuario envía otro mensaje
+        if procesando_pago:
+            return "Estamos procesando su comprobante de pago. Por favor, espere unos momentos. 🙏"
 
         # Etapa: Inicio
         if etapa_venta == "inicio" or "hola" in prompt.lower():
@@ -239,6 +245,8 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
                     "**Instrucciones de pago:**\n"
                     "1. Transfiere al SINPE MÓVIL: 8888-8888\n"
                     "2. Envíe el NÚMERO DE REFERENCIA de su comprobante o una captura de pantalla\n"
+                    "3. Espere la confirmación de su apuntado mientras verificamos su pago (2 min max)\n"
+                    "Gracias por confiar en nosotros. ¡Buena suerte en el sorteo! 🍀"
                     f"{random.choice(cierres)} 🍀"
                 )
                 etapa_venta = "validar_pago"
@@ -251,10 +259,19 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
         # Etapa: Validar pago
         elif etapa_venta == "validar_pago":
             if image_url:
+                # Actualizar el estado de procesamiento de pago
+                chat_sessions_collection.update_one(
+                    {"_id": chat_session["_id"]},
+                    {"$set": {"procesando_pago": True}}
+                )
+
+                # Respuesta de la IA indicando que se está procesando el comprobante
+                ai_response = "Procesando su comprobante de pago... 🕒"
+
+                # Descargar y procesar la imagen
                 image_path = download_image_from_url(image_url)
                 if image_path:
                     extracted_text = extract_text_from_image_with_gemini(image_path, os.getenv("GEMINI_API_KEY"))
-                    ai_response = "Procesando su comprobante de pago... 🕒"
                     if extracted_text:
                         referencia_match = re.search(r'\b\d{20,30}\b', extracted_text)
                         monto_match = re.search(r'\b\d+[\.,]?\d{2}\b', extracted_text)
@@ -286,7 +303,7 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
                                     )
                                     for apuesta in apuestas:
                                         factura += f"   - Número: {apuesta['numero']} | Ronda: {apuesta['ronda']} | Monto: ¢{apuesta['monto']:,}\n"
-                                    factura += "\n🍀 ¡Gracias por confiar en nosotros! ¡Buena suerte en el sorteo!\n⚠️ *Nota:* No realizamos devoluciones. 🙏"
+                                    factura += "\n🍀 ¡Gracias por confiar en nosotros! ¡Buena suerte en el sorteo!\n⚠️ *Nota:* No realizamos devoluciones. 🙏\n⚠️ *Nota:* Cualquier inconveniente comunicarse al soporte 8888-8888"
 
                                     # Guardar la factura en la colección `sales`
                                     sales_collection.insert_one({
@@ -298,22 +315,38 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
                                         "factura": factura
                                     })
 
-                                    # Enviar la factura al usuario
-                                    try:
-                                        ai_response = factura
-                                    except Exception as e:
-                                        app.logger.error(f"Error al enviar la factura: {str(e)}")
+                                    # Finalizar el estado de procesamiento de pago
+                                    chat_sessions_collection.update_one(
+                                        {"_id": chat_session["_id"]},
+                                        {"$set": {"procesando_pago": False}}
+                                    )
 
                                     return factura
                                 time.sleep(10)
 
                             # Si no se encontró el comprobante dentro del tiempo límite
+                            chat_sessions_collection.update_one(
+                                {"_id": chat_session["_id"]},
+                                {"$set": {"procesando_pago": False}}
+                            )
                             return "No se encontró el comprobante en el tiempo límite. Por favor, intente nuevamente."
                         else:
+                            chat_sessions_collection.update_one(
+                                {"_id": chat_session["_id"]},
+                                {"$set": {"procesando_pago": False}}
+                            )
                             return "No se encontró referencia o monto en la imagen."
                     else:
+                        chat_sessions_collection.update_one(
+                            {"_id": chat_session["_id"]},
+                            {"$set": {"procesando_pago": False}}
+                        )
                         return "No se pudo extraer texto de la imagen."
                 else:
+                    chat_sessions_collection.update_one(
+                        {"_id": chat_session["_id"]},
+                        {"$set": {"procesando_pago": False}}
+                    )
                     return "No se pudo descargar la imagen."
             else:
                 return "No se proporcionó una URL de imagen."
@@ -321,7 +354,10 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
         # Actualizar la sesión de chat
         chat_sessions_collection.update_one(
             {"_id": chat_session["_id"]},
-            {"$set": {"etapa_venta": etapa_venta, "apuestas": apuestas}}
+            {
+                "$set": {"etapa_venta": etapa_venta, "apuestas": apuestas},
+                "$push": {"chat_history": {"user_message": prompt, "ai_response": ai_response, "timestamp": datetime.now()}}
+            }
         )
 
         return ai_response
