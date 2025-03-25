@@ -250,16 +250,11 @@ def chat_logic_simplified(phone_number, prompt, ai_name=None, image_url=None):
 
         # Etapa: Validar pago
         elif etapa_venta == "validar_pago":
-            # Enviar mensaje inicial de procesamiento al usuario
-            try:
-                ai_response = "Procesando su comprobante de pago... 🕒"
-            except Exception as e:
-                app.logger.error(f"Error al enviar mensaje de procesamiento: {str(e)}")
-
             if image_url:
                 image_path = download_image_from_url(image_url)
                 if image_path:
                     extracted_text = extract_text_from_image_with_gemini(image_path, os.getenv("GEMINI_API_KEY"))
+                    ai_response = "Procesando su comprobante de pago... 🕒"
                     if extracted_text:
                         referencia_match = re.search(r'\b\d{20,30}\b', extracted_text)
                         monto_match = re.search(r'\b\d+[\.,]?\d{2}\b', extracted_text)
