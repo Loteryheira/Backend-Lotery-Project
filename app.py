@@ -29,6 +29,10 @@ logging.basicConfig(
     encoding='utf-8'  # Asegúrate de usar UTF-8
 )
 
+@app.route('/')
+def index():
+    return "¡Hola, mundo!"
+
 # Reducir el nivel de logs para PyMongo
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 
