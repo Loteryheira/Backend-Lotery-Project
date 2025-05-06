@@ -591,8 +591,9 @@ def save_image_to_static():
                 f.write(response.content)
             app.logger.info(f"Archivo guardado en: {local_file_path}")
 
-            # Construir la URL accesible públicamente
-            public_url = f"/static/{file_name}"
+            # Construir la URL completa accesible públicamente
+            server_url = request.host_url.rstrip('/')  # Obtener la URL base del servidor
+            public_url = f"{server_url}/static/{file_name}"
             results.append({
                 "file_id": file_info.get("file_id"),
                 "file_url": public_url
