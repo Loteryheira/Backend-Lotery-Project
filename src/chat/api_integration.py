@@ -4,7 +4,7 @@ from datetime import datetime
 import openai
 import random
 import re
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import re 
 import requests
 import time
@@ -103,18 +103,17 @@ def download_image_from_url(image_url):
 
         app.logger.info(f"Intentando descargar la imagen desde la URL: {image_url}")
         
-        # Descargar la imagen sin autenticación
+        # Descargar el archivo
         response = requests.get(image_url, timeout=10)
         response.raise_for_status()
 
-        # Verificar el tipo de contenido
-        content_type = response.headers.get('Content-Type', '')
-        if 'image' not in content_type:
-            app.logger.info(f"El contenido descargado no es una imagen. Content-Type: {content_type}")
+        # Validar si el archivo es una imagen usando Pillow
+        try:
+            image = Image.open(BytesIO(response.content))
+            image.verify()  # Verifica si el archivo es una imagen válida
+        except UnidentifiedImageError:
+            app.logger.info(f"El contenido descargado no es una imagen válida.")
             return None
-
-        # Abrir la imagen
-        image = Image.open(BytesIO(response.content))
 
         # Verificar si la carpeta 'static' existe, si no, crearla
         static_folder = os.path.join(os.path.dirname(__file__), '..', 'static')
@@ -122,8 +121,10 @@ def download_image_from_url(image_url):
             os.makedirs(static_folder)
             app.logger.info(f"Carpeta 'static' creada en: {static_folder}")
 
-        # Guardar la imagen
-        image_path = os.path.join(static_folder, "downloaded_image.png")
+        # Guardar la imagen con la extensión correcta
+        image = Image.open(BytesIO(response.content))  # Reabrir la imagen para guardarla
+        file_name = f"downloaded_image.{image.format.lower()}"  # Usar el formato detectado por Pillow
+        image_path = os.path.join(static_folder, file_name)
         image.save(image_path)
         app.logger.info(f"Imagen descargada y guardada en: {image_path}")
         return image_path
