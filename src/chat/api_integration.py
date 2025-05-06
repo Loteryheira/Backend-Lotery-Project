@@ -122,6 +122,8 @@ def download_image_from_url(image_url):
             app.logger.info(f"Carpeta 'static' creada en: {static_folder}")
 
         # Guardar la imagen con la extensión correcta
+
+        
         image = Image.open(BytesIO(response.content))  # Reabrir la imagen para guardarla
         file_name = f"downloaded_image.{image.format.lower()}"  # Usar el formato detectado por Pillow
         image_path = os.path.join(static_folder, file_name)
@@ -574,7 +576,7 @@ def save_image_to_static():
             file_path = file_info.get("file_path")
             if not file_path:
                 continue
-            
+
 
             # Construir la URL del archivo en Telegram
             telegram_file_url = f"https://api.telegram.org/file/bot7910952063:AAHRyczdhce6_UdOwj8Kr07n4mYyxP7B2fA/{file_path}"
