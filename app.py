@@ -8,7 +8,7 @@ import schedule
 import time
 import threading
 
-app = Flask(__name__, static_folder="/src/static")
+app = Flask(__name__)
 
 load_dotenv()
 
