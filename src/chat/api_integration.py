@@ -15,6 +15,7 @@ from src.chat.correo_verificacion import extraer_mensajes_gmail
 from dotenv import load_dotenv, find_dotenv
 import os
 import base64
+import imghdr
 
 load_dotenv()
 
@@ -107,14 +108,12 @@ def download_image_from_url(image_url):
         response = requests.get(image_url, timeout=10)
         response.raise_for_status()
 
-        # Verificar el tipo de contenido
-        content_type = response.headers.get('Content-Type', '')
-        if 'image' not in content_type:
-            app.logger.info(f"El contenido descargado no es una imagen. Content-Type: {content_type}")
+        # Verificar el tipo de archivo descargado
+        file_content = response.content
+        file_type = imghdr.what(None, h=file_content)
+        if not file_type:
+            app.logger.info(f"El contenido descargado no es una imagen válida.")
             return None
-
-        # Abrir la imagen
-        image = Image.open(BytesIO(response.content))
 
         # Verificar si la carpeta 'static' existe, si no, crearla
         static_folder = os.path.join(os.path.dirname(__file__), '..', 'static')
@@ -122,9 +121,11 @@ def download_image_from_url(image_url):
             os.makedirs(static_folder)
             app.logger.info(f"Carpeta 'static' creada en: {static_folder}")
 
-        # Guardar la imagen
-        image_path = os.path.join(static_folder, "downloaded_image.png")
-        image.save(image_path)
+        # Guardar la imagen con la extensión correcta
+        file_name = f"downloaded_image.{file_type}"
+        image_path = os.path.join(static_folder, file_name)
+        with open(image_path, "wb") as f:
+            f.write(file_content)
         app.logger.info(f"Imagen descargada y guardada en: {image_path}")
         return image_path
     except requests.exceptions.RequestException as req_err:
@@ -566,16 +567,19 @@ def save_image_to_static():
             app.logger.info(f"Carpeta 'static' creada en: {static_folder}")
 
         for item in data:
-            if not item.get("ok") or not item.get("result"):
+            # Extraer el objeto anidado dentro de la lista
+            if not isinstance(item, dict) or "Object" not in item:
+                app.logger.error("Formato inválido: falta la clave 'Object'.")
                 continue
 
-            file_info = item["result"]
+            file_info = item["Object"]
             file_path = file_info.get("file_path")
             if not file_path:
+                app.logger.error("Formato inválido: falta la clave 'file_path'.")
                 continue
 
             # Construir la URL del archivo en Telegram
-            telegram_file_url = f"https://api.telegram.org/file/bot7910952063:AAHRyczdhce6_UdOwj8Kr07n4mYyxP7B2fA/{file_path}"
+            telegram_file_url = f"https://api.telegram.org/file/bot{os.getenv('TELEGRAM_BOT_TOKEN')}/{file_path}"
             app.logger.info(f"Descargando archivo desde: {telegram_file_url}")
 
             # Descargar y guardar la imagen usando la función `download_image_from_url`
