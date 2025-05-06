@@ -579,7 +579,7 @@ def save_image_to_static():
                 continue
 
             # Construir la URL del archivo en Telegram
-            telegram_file_url = f"https://api.telegram.org/file/bot{os.getenv('TELEGRAM_BOT_TOKEN')}/{file_path}"
+            telegram_file_url = f"https://api.telegram.org/file/bot7910952063:AAHRyczdhce6_UdOwj8Kr07n4mYyxP7B2fA/{file_path}"
             app.logger.info(f"Descargando archivo desde: {telegram_file_url}")
 
             # Descargar y guardar la imagen usando la función `download_image_from_url`
