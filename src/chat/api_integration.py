@@ -1,23 +1,20 @@
 from flask import Blueprint, request, jsonify, current_app as app
-from twilio.twiml.messaging_response import MessagingResponse
-from twilio.rest import Client
 from src.database.db import friends_collection, chat_sessions_collection, sales_collection, comprobantes_collection
 from datetime import datetime
 import openai
-import os
-from dotenv import load_dotenv
 import random
 import re
 from PIL import Image
 import re 
 import requests
 import time
-import threading
 from io import BytesIO
 from google import genai
 from google.genai import types
 from src.chat.correo_verificacion import extraer_mensajes_gmail  
-
+from dotenv import load_dotenv, find_dotenv
+import os
+import base64
 
 load_dotenv()
 
@@ -26,11 +23,9 @@ chatbot_api = Blueprint("chatbot_api", __name__)
 client = openai.Client()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
-
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN")
+PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+WHATSAPP_URL = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
 
 #------------------------- Función para generar respuesta de IA --------------------------
 
@@ -108,8 +103,8 @@ def download_image_from_url(image_url):
 
         app.logger.info(f"Intentando descargar la imagen desde la URL: {image_url}")
         
-        # Autenticación con las credenciales de Twilio
-        response = requests.get(image_url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), timeout=10)
+        # Descargar la imagen sin autenticación
+        response = requests.get(image_url, timeout=10)
         response.raise_for_status()
 
         # Verificar el tipo de contenido
@@ -172,6 +167,44 @@ def extract_amount(text):
         amount_str = match.group().replace(",", "")
         return int(float(amount_str))  # Convertir a entero
     return None
+
+#------------------------- Función para enviar mensajes de WhatsApp --------------------------
+
+def send_whatsapp_message(phone_number, message):
+    """
+    Envía un mensaje de WhatsApp usando la API de WhatsApp Business.
+    """
+    if not ACCESS_TOKEN or not PHONE_NUMBER_ID:
+        app.logger.error("Las credenciales de WhatsApp Business no están configuradas correctamente.")
+        app.logger.error(f"ACCESS_TOKEN: {ACCESS_TOKEN}")
+        app.logger.error(f"PHONE_NUMBER_ID: {PHONE_NUMBER_ID}")
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": phone_number,  # Asegúrate de que el número incluya el prefijo 'whatsapp:'
+        "type": "text",
+        "text": {
+            "body": message
+        }
+    }
+
+    app.logger.info(f"Payload enviado: {payload}")  # Log del payload
+
+    try:
+        response = requests.post(WHATSAPP_URL, headers=headers, json=payload)
+        response.raise_for_status()
+        app.logger.info(f"Mensaje enviado correctamente a {phone_number}: {message}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Error al enviar mensaje a {phone_number}: {str(e)}")
+        if e.response is not None:
+            app.logger.error(f"Respuesta de la API: {e.response.text}")  # Log de la respuesta de la API
+        return None
 
 #------------------------- Función simplificada para la lógica de chat --------------------------
 
@@ -407,74 +440,169 @@ def create_friend():
         return jsonify({"error": str(e)}), 500
 
 
-@chatbot_api.route("/api/v1/chat/twilio", methods=["POST"])
-def chat_twilio_endpoint():
+@chatbot_api.route("/api/v1/chat/whatsapp", methods=["GET", "POST"])
+def chat_whatsapp_endpoint():
     try:
-        incoming_msg = request.values.get("Body", "").strip()
-        sender_phone_number = request.values.get("From", "").strip()
-        media_url = request.values.get("MediaUrl0", "").strip()
+        # Manejar la verificación del webhook (GET)
+        if request.method == "GET":
+            hub_mode = request.args.get("hub.mode")
+            hub_challenge = request.args.get("hub.challenge")
+            hub_verify_token = request.args.get("hub.verify_token")
 
-        app.logger.info(f"Mensaje recibido: {incoming_msg}")
-        app.logger.info(f"Número del remitente: {sender_phone_number}")
-        app.logger.info(f"URL de la imagen recibida: {media_url}")
+            VERIFY_TOKEN = "perroblanco"
+            if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+                app.logger.info("Webhook verificado correctamente.")
+                return hub_challenge, 200
+            else:
+                app.logger.warning("Fallo en la verificación del webhook. Token inválido.")
+                return "Token de verificación inválido.", 400
 
-        if not incoming_msg and not media_url:
-            app.logger.info("El mensaje recibido está vacío y no contiene una URL de imagen.")
-            return "No se recibió ningún mensaje ni imagen.", 400
+        # Manejar los mensajes entrantes (POST)
+        elif request.method == "POST":
+            # Leer los datos enviados por WhatsApp Business API
+            incoming_msg = request.form.get("Body", "").strip()
+            sender_phone_number = request.form.get("From", "").strip()
+            media_url = request.form.get("MediaUrl0", "").strip()
 
-        # Llamar a la lógica del chat
-        ai_response = chat_logic_simplified(
-            sender_phone_number, incoming_msg, ai_name="Tía Maria", image_url=media_url
-        )
+            app.logger.info(f"Mensaje recibido: {incoming_msg}")
+            app.logger.info(f"Número del remitente: {sender_phone_number}")
+            app.logger.info(f"URL de la imagen recibida: {media_url}")
 
-        # Crear la respuesta para Twilio
-        resp = MessagingResponse()
-        msg = resp.message()
-        msg.body(ai_response)
+            if not incoming_msg and not media_url:
+                app.logger.info("El mensaje recibido está vacío y no contiene una URL de imagen.")
+                return "No se recibió ningún mensaje ni imagen.", 400
 
-        app.logger.info(f"Respuesta enviada al usuario: {ai_response}")
-        return str(resp)
+            # Llamar a la lógica del chat
+            ai_response = chat_logic_simplified(
+                sender_phone_number, incoming_msg, ai_name="Tía Maria", image_url=media_url
+            )
+
+            # Enviar la respuesta al usuario usando WhatsApp Business
+            send_whatsapp_message(sender_phone_number, ai_response)
+
+            app.logger.info(f"Respuesta enviada al usuario: {ai_response}")
+            return jsonify({"message": "Respuesta enviada correctamente."}), 200
+
     except Exception as e:
-        app.logger.error(f"Error en el endpoint /api/v1/chat/twilio: {str(e)}")
+        app.logger.error(f"Error en el endpoint /api/v1/chat/whatsapp: {str(e)}")
         return str(e), 500
-    
-@chatbot_api.route("/api/v1/sms", methods=["POST"])
-def handle_sms():
+
+@chatbot_api.route("/api/v1/chat/ia/images", methods=["POST"])
+def chat_ia_images_endpoint():
     try:
-        body = request.form.get("Body", "Hola, aquí está mi comprobante: 12345678901234567890")
-        
-        message = twilio_client.messages.create(
-            from_='+12533667729',
-            body=body,
-            to='+18777804236'
-        )
-        print(message.sid)
+        data = request.json
+        phone_number = data.get("phone_number")
+        prompt = data.get("prompt")
+        image_url = data.get("image_url")
 
-        sender_phone_number = '+12533667729'
-        expected_sender = "+12533667729"
-        expected_receiver = "+18777804236"
+        if not phone_number or not prompt:
+            return jsonify({"error": "Faltan parámetros requeridos."}), 400
 
-        if sender_phone_number != expected_sender:
-            return "Número de origen no autorizado.", 403
+        # Lógica de chat simplificada
+        ai_response = chat_logic_simplified(phone_number, prompt, image_url=image_url)
 
-        if '+18777804236' != expected_receiver:
-            return "Número de destino no autorizado.", 403
+        return jsonify({"response": ai_response}), 200
 
-        comprobante_match = re.search(r'\b\d{20}\b', body)
-        if comprobante_match:
-            referencia_pago = comprobante_match.group()
+    except Exception as e:
+        app.logger.error(f"Error en el endpoint /api/v1/chat/ia/images: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-            comprobantes_collection.insert_one({
-                "telefono": sender_phone_number,
-                "referencia": referencia_pago,
-                "fecha": datetime.now().isoformat(),
-                "mensaje": body,
-                "usado": False
+@chatbot_api.route("/api/v1/files/to_base64", methods=["POST"])
+def files_to_base64():
+    try:
+        data = request.json
+        if not isinstance(data, list) or not data:
+            return jsonify({"error": "El cuerpo de la solicitud debe ser una lista no vacía."}), 400
+
+        results = []
+        for item in data:
+            if not item.get("ok") or not item.get("result"):
+                continue
+
+            file_info = item["result"]
+            file_path = file_info.get("file_path")
+            if not file_path:
+                continue
+
+            # Construir la URL del archivo
+            telegram_file_url = f"https://api.telegram.org/file/bot7910952063:AAHRyczdhce6_UdOwj8Kr07n4mYyxP7B2fA/{file_path}"
+            app.logger.info(f"Descargando archivo desde: {telegram_file_url}")
+
+            # Descargar el archivo
+            response = requests.get(telegram_file_url, timeout=10)
+            if response.status_code != 200:
+                app.logger.error(f"Error al descargar el archivo: {response.status_code}")
+                continue
+
+            # Convertir el archivo a Base64
+            file_base64 = base64.b64encode(response.content).decode("utf-8")
+            results.append({
+                "file_id": file_info.get("file_id"),
+                "file_base64": file_base64
             })
 
-            return "SMS enviado y registrado correctamente.", 200
-        else:
-            return "No se encontró un número de comprobante válido.", 400
+        if not results:
+            return jsonify({"error": "No se pudo procesar ningún archivo."}), 400
+
+        return jsonify({"files": results}), 200
 
     except Exception as e:
-        return str(e), 500
+        app.logger.error(f"Error en el endpoint /api/v1/files/to_base64: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@chatbot_api.route("/api/v1/files/save_image", methods=["POST"])
+def save_image_to_static():
+    try:
+        data = request.json
+        if not isinstance(data, list) or not data:
+            return jsonify({"error": "El cuerpo de la solicitud debe ser una lista no vacía."}), 400
+
+        results = []
+        static_folder = os.path.join(os.path.dirname(__file__), '..', 'static')
+
+        # Crear la carpeta 'static' si no existe
+        if not os.path.exists(static_folder):
+            os.makedirs(static_folder)
+            app.logger.info(f"Carpeta 'static' creada en: {static_folder}")
+
+        for item in data:
+            if not item.get("ok") or not item.get("result"):
+                continue
+
+            file_info = item["result"]
+            file_path = file_info.get("file_path")
+            if not file_path:
+                continue
+
+            # Construir la URL del archivo en Telegram
+            telegram_file_url = f"https://api.telegram.org/file/bot7910952063:AAHRyczdhce6_UdOwj8Kr07n4mYyxP7B2fA/{file_path}"
+            app.logger.info(f"Descargando archivo desde: {telegram_file_url}")
+
+            # Descargar el archivo
+            response = requests.get(telegram_file_url, timeout=10)
+            if response.status_code != 200:
+                app.logger.error(f"Error al descargar el archivo: {response.status_code}")
+                continue
+
+            # Guardar la imagen en la carpeta 'static'
+            file_name = os.path.basename(file_path)
+            local_file_path = os.path.join(static_folder, file_name)
+            with open(local_file_path, "wb") as f:
+                f.write(response.content)
+            app.logger.info(f"Archivo guardado en: {local_file_path}")
+
+            # Construir la URL accesible públicamente
+            public_url = f"/static/{file_name}"
+            results.append({
+                "file_id": file_info.get("file_id"),
+                "file_url": public_url
+            })
+
+        if not results:
+            return jsonify({"error": "No se pudo procesar ningún archivo."}), 400
+
+        return jsonify({"files": results}), 200
+
+    except Exception as e:
+        app.logger.error(f"Error en el endpoint /api/v1/files/save_image: {str(e)}")
+        return jsonify({"error": str(e)}), 500
