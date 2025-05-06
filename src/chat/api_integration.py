@@ -578,20 +578,14 @@ def save_image_to_static():
             telegram_file_url = f"https://api.telegram.org/file/bot7910952063:AAHRyczdhce6_UdOwj8Kr07n4mYyxP7B2fA/{file_path}"
             app.logger.info(f"Descargando archivo desde: {telegram_file_url}")
 
-            # Descargar el archivo
-            response = requests.get(telegram_file_url, timeout=10)
-            if response.status_code != 200:
-                app.logger.error(f"Error al descargar el archivo: {response.status_code}")
+            # Descargar y guardar la imagen usando la función `download_image_from_url`
+            image_path = download_image_from_url(telegram_file_url)
+            if not image_path:
+                app.logger.error(f"No se pudo descargar o guardar la imagen desde: {telegram_file_url}")
                 continue
 
-            # Guardar la imagen en la carpeta 'static'
-            file_name = os.path.basename(file_path)
-            local_file_path = os.path.join(static_folder, file_name)
-            with open(local_file_path, "wb") as f:
-                f.write(response.content)
-            app.logger.info(f"Archivo guardado en: {local_file_path}")
-
             # Construir la URL completa accesible públicamente
+            file_name = os.path.basename(image_path)
             server_url = request.host_url.rstrip('/')  # Obtener la URL base del servidor
             public_url = f"{server_url}/static/{file_name}"
             results.append({
